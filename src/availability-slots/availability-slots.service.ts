@@ -12,6 +12,9 @@ function dayOfWeekUTC(date: Date): DayOfWeek {
   const map: DayOfWeek[] = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
   return map[date.getUTCDay()];
 }
+function addMinutesToDate(date: Date, minutes: number) {
+  return new Date(date.getTime() + minutes * 60 * 1000);
+}
 
 @Injectable()
 export class AvailabilitySlotsService {
@@ -59,6 +62,9 @@ export class AvailabilitySlotsService {
       for (const r of dayRules) {
         const duration = r.slotDurationMin ?? 15;
         for (let start = r.startMinute; start + duration <= r.endMinute; start += duration) {
+            const startAt = addMinutesToDate(date, start);
+            const endAt = addMinutesToDate(date, start + duration);
+
           slotRows.push({
             doctorId,
             clinicId: r.clinicId ?? null,
@@ -67,6 +73,8 @@ export class AvailabilitySlotsService {
             startMinute: start,
             endMinute: start + duration,
             timeOfDay: r.timeOfDay,
+            startAt,
+            endAt,
             capacity: r.capacityPerSlot ?? 1,
             bookedCount: 0,
             status: 'AVAILABLE',

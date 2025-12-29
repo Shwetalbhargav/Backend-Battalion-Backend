@@ -1,7 +1,7 @@
 import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
 import { ScheduleRulesService } from './schedule-rules.service';
 import { CreateScheduleRuleDto } from './dto/create-schedule-rule.dto';
-import { BulkDefaultsDto } from './dto/bulk-defaults.dto';
+
 
 @Controller('api/v1/schedule-rules')
 export class ScheduleRulesController {
@@ -19,7 +19,10 @@ export class ScheduleRulesController {
 
   // Bulk defaults endpoint
   @Post('bulk-defaults/:doctorId')
-  bulkDefaults(@Param('doctorId') doctorId: string, @Body() dto: BulkDefaultsDto) {
-    return this.service.bulkCreateDefaults(doctorId, dto.clinicId);
+  bulkDefaults(
+    @Param('doctorId') doctorId: string,
+    @Body() body: { clinicId?: number }, // optional
+  ) {
+    return this.service.bulkCreateDefaults(doctorId, body?.clinicId);
   }
 }

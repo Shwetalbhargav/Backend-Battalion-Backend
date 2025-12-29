@@ -190,6 +190,11 @@ model AvailabilitySlot {
   endMinute   Int
   timeOfDay   TimeOfDay
 
+  // ✅ Add actual timestamps
+  startAt     DateTime
+  endAt       DateTime
+
+
   capacity    Int        @default(1)
   bookedCount Int        @default(0)
   status      SlotStatus @default(AVAILABLE)
