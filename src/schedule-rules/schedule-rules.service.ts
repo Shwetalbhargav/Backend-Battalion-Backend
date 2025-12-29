@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateScheduleRuleDto } from './dto/create-schedule-rule.dto';
+import { Prisma } from '@prisma/client';
 
 type Day = 'MON' | 'TUE' | 'WED' | 'THU' | 'FRI' | 'SAT' | 'SUN';
 type MeetingType = 'ONLINE' | 'OFFLINE';
@@ -69,7 +70,7 @@ export class ScheduleRulesService {
       { dayOfWeek: 'SAT', timeOfDay: 'MORNING', startMinute: 540, endMinute: 690 },
     ];
 
-    const data = [];
+    const data: Prisma.DoctorScheduleRuleCreateManyInput[] = [];
     for (const t of templates) {
       for (const mt of meetingTypes) {
         if (mt === 'OFFLINE' && !clinicId) {
