@@ -3,6 +3,7 @@ import { PatientService } from './patient.service';
 import { CreatePatientDto } from './dto/create-patient.dto';
 import { UpdatePatientDto } from './dto/update-patient.dto';
 import { PatientOnly } from '../auth/guards/patient-only.guard';
+import { ParseIntPipe } from '@nestjs/common';
 
 @Controller('patient')
 export class PatientController {
@@ -26,19 +27,20 @@ export class PatientController {
   }
 
   @Get(':id')
-  findOne(@Param('id') id: string) {
+  findOne(@Param('id', ParseIntPipe) id: number) {
     return this.patientService.findOne(id);
   }
 
   @Patch(':id')
-  @PatientOnly()
-  update(@Param('id') id: string, @Body() dto: UpdatePatientDto) {
+  update(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: UpdatePatientDto,
+  ) {
     return this.patientService.update(id, dto);
   }
 
   @Delete(':id')
-  @PatientOnly()
-  remove(@Param('id') id: string) {
+  remove(@Param('id', ParseIntPipe) id: number) {
     return this.patientService.remove(id);
   }
 }

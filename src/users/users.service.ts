@@ -11,47 +11,45 @@ export class UsersService {
     return this.prisma.user.create({
       data: {
         email: dto.email,
-        name: dto.name,
+        name: dto.name ?? null,
         role: dto.role,
-        provider: dto.provider,
-        providerId: dto.providerId,
+        provider: dto.provider ?? null,
+        providerId: dto.providerId ?? null,
       },
     });
   }
 
   findAll() {
     return this.prisma.user.findMany({
-      orderBy: { createdAt: 'desc' },
+      orderBy: { id: 'asc' },
     });
   }
 
-  async findOne(id: string) {
+  async findOne(id: number) {
     const user = await this.prisma.user.findUnique({ where: { id } });
     if (!user) throw new NotFoundException('User not found');
     return user;
   }
 
-  async update(id: string, dto: UpdateUserDto) {
+  async update(id: number, dto: UpdateUserDto) {
     await this.findOne(id);
-
     return this.prisma.user.update({
       where: { id },
       data: {
-        email: dto.email,
-        name: dto.name,
-        role: dto.role,
-        provider: dto.provider,
-        providerId: dto.providerId,
+        email: dto.email ?? undefined,
+        name: dto.name ?? undefined,
+        role: dto.role ?? undefined,
+        provider: dto.provider ?? undefined,
+        providerId: dto.providerId ?? undefined,
       },
     });
   }
 
-  async remove(id: string) {
+  async remove(id: number) {
     await this.findOne(id);
     return this.prisma.user.delete({ where: { id } });
   }
 
-  // ✅ Needed for Google OAuth auto-create/link flow
   findByEmail(email: string) {
     return this.prisma.user.findUnique({ where: { email } });
   }
@@ -60,10 +58,11 @@ export class UsersService {
     return this.prisma.user.findFirst({ where: { provider, providerId } });
   }
 
-  linkGoogle(userId: string, providerId: string) {
+  // ✅ FIX: userId is Int in Prisma => number in TS
+  linkGoogle(userId: number, providerId: string) {
     return this.prisma.user.update({
       where: { id: userId },
-      data: { provider: 'GOOGLE', providerId },
+      data: { provider: 'google', providerId },
     });
   }
 }

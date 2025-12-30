@@ -1,30 +1,31 @@
-import { Injectable, OnModuleInit } from '@nestjs/common';
+import { Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
-import { Pool } from 'pg';
-
-type PrismaClientWithAdapter = ConstructorParameters<typeof PrismaClient>[0] & {
-  adapter: PrismaPg;
-};
 
 @Injectable()
-export class PrismaService extends PrismaClient implements OnModuleInit {
+export class PrismaService extends PrismaClient implements OnModuleInit, OnModuleDestroy {
   constructor() {
     const connectionString = process.env.DATABASE_URL;
 
-    // Make sure this exists
     if (!connectionString) {
-      throw new Error('DATABASE_URL is missing in environment (.env)');
+      throw new Error('DATABASE_URL is missing. Check your .env / Render env vars.');
     }
 
-    const pool = new Pool({ connectionString });
-    const adapter = new PrismaPg(pool);
+    const adapter = new PrismaPg({ connectionString });
 
-    // Prisma v7: pass a non-empty valid options object (adapter)
-    super({ adapter } as PrismaClientWithAdapter);
+    super({ adapter });
+
+    // Optional: keep the log, but don't print secrets in prod
+    if (process.env.NODE_ENV !== 'production') {
+      console.log('Prisma connected using DATABASE_URL');
+    }
   }
 
   async onModuleInit() {
     await this.$connect();
+  }
+
+  async onModuleDestroy() {
+    await this.$disconnect();
   }
 }

@@ -52,7 +52,7 @@ export class GoogleStrategy extends PassportStrategy(Strategy, 'google') {
       const user = await this.auth.findOrCreateGoogleUser({
         email,
         name,
-        provider: 'GOOGLE',
+        
         providerId,
         role,
       });

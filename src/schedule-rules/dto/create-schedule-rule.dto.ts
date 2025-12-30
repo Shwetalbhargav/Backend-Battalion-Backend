@@ -1,39 +1,45 @@
-import { IsBoolean, IsEnum, IsInt, IsOptional, IsString, Min } from 'class-validator';
+import { IsBoolean, IsEnum, IsInt, IsOptional, Min } from 'class-validator';
+import { Type } from 'class-transformer';
+import { DayOfWeek, MeetingType, TimeOfDay } from '@prisma/client';
 
 export class CreateScheduleRuleDto {
-  @IsString()
-  doctorId: string;
+  @Type(() => Number)
+  @IsInt()
+  doctorId: number;
 
   @IsOptional()
-  @IsString()
-  clinicId?: string;
+  @Type(() => Number)
+  @IsInt()
+  clinicId?: number | null;
 
-  @IsEnum(['ONLINE', 'OFFLINE'])
-  meetingType: 'ONLINE' | 'OFFLINE';
+  @IsEnum(MeetingType)
+  meetingType: MeetingType;
 
-  @IsEnum(['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'])
-  dayOfWeek: 'MON' | 'TUE' | 'WED' | 'THU' | 'FRI' | 'SAT' | 'SUN';
+  @IsEnum(DayOfWeek)
+  dayOfWeek: DayOfWeek;
 
-  @IsEnum(['MORNING', 'EVENING'])
-  timeOfDay: 'MORNING' | 'EVENING';
+  @IsEnum(TimeOfDay)
+  timeOfDay: TimeOfDay;
 
+  @Type(() => Number)
   @IsInt()
   @Min(0)
   startMinute: number;
 
+  @Type(() => Number)
   @IsInt()
-  @Min(1)
+  @Min(0)
   endMinute: number;
 
   @IsOptional()
+  @Type(() => Number)
   @IsInt()
-  @Min(5)
-  slotDurationMin?: number; // default 15
+  slotDurationMin?: number;
 
   @IsOptional()
+  @Type(() => Number)
   @IsInt()
-  @Min(1)
-  capacityPerSlot?: number; // default 1
+  capacityPerSlot?: number;
 
   @IsOptional()
   @IsBoolean()

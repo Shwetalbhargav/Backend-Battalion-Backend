@@ -3,6 +3,7 @@ import { JwtService } from '@nestjs/jwt';
 import { UsersService } from '../users/users.service';
 import { DoctorService } from '../doctor/doctor.service';
 import { PatientService } from '../patient/patient.service';
+import { Role } from '@prisma/client';
 
 @Injectable()
 export class AuthService {
@@ -15,43 +16,47 @@ export class AuthService {
 
   async findOrCreateGoogleUser(payload: {
     email: string;
-    name: string;
-    provider: 'GOOGLE';
+    name?: string | null;
     providerId: string;
-    role: 'DOCTOR' | 'PATIENT';
+    role: Role; // 'DOCTOR' | 'PATIENT'
   }) {
-    // 1) find by providerId (best)
-    const byProvider = await this.users.findByProvider(
-      payload.provider,
-      payload.providerId,
-    );
-    if (byProvider) return byProvider;
+    // 1) already linked to google?
+    const byProvider = await this.users.findByProvider('google', payload.providerId);
+    if (byProvider) {
+      await this.ensureProfile(byProvider.id, byProvider.role);
+      return byProvider;
+    }
 
-    // 2) find by email (link old account)
+    // 2) existing email? link google
     const byEmail = await this.users.findByEmail(payload.email);
     if (byEmail) {
-      return this.users.linkGoogle(byEmail.id, payload.providerId);
+      const linked = await this.users.linkGoogle(byEmail.id, payload.providerId); // ✅ number
+      await this.ensureProfile(linked.id, linked.role);
+      return linked;
     }
 
-    // 3) create new
-    return this.users.create({
+    // 3) create new user
+    const created = await this.users.create({
       email: payload.email,
-      name: payload.name,
+      name: payload.name ?? null,
       role: payload.role,
-      provider: payload.provider,
+      provider: 'google',
       providerId: payload.providerId,
-    });
+    } as any);
+
+    await this.ensureProfile(created.id, created.role);
+    return created;
   }
 
-  async ensureProfileForRole(userId: string, role: 'DOCTOR' | 'PATIENT') {
+  private async ensureProfile(userId: number, role: Role) {
     if (role === 'DOCTOR') {
-      await this.doctors.ensureDoctorProfile(userId);
+      await this.doctors.ensureDoctorProfile(userId); // ✅ number
     } else {
-      await this.patients.ensurePatientProfile(userId);
+      await this.patients.ensurePatientProfile(userId); // ✅ number
     }
   }
 
-  async signJwt(user: any) {
+  async signJwt(user: { id: number; role: Role; email: string }) {
     return this.jwt.signAsync({
       sub: user.id,
       role: user.role,

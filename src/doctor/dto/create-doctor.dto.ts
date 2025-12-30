@@ -1,24 +1,25 @@
-import { IsInt, IsOptional, IsString, Min } from 'class-validator';
+import { IsInt, IsOptional, IsString, IsBoolean } from 'class-validator';
+import { Type } from 'class-transformer';
 
 export class CreateDoctorDto {
-  @IsOptional()
-  @IsString()
-  userId: string;
+  @Type(() => Number)
+  @IsInt()
+  userId: number;
 
   @IsOptional()
   @IsString()
   specialization?: string;
 
   @IsOptional()
-  @IsString()
-  licenseNumber?: string;
-
-  @IsOptional()
+  @Type(() => Number)
   @IsInt()
-  @Min(0)
   experienceYears?: number;
 
   @IsOptional()
   @IsString()
   bio?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  isActive?: boolean;
 }
