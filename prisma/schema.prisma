@@ -1,62 +1,216 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
-// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
-
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
   provider = "postgresql"
+  
 }
+
+/* -------------------- Enums -------------------- */
 
 enum Role {
   DOCTOR
   PATIENT
 }
 
+enum DayOfWeek {
+  MON
+  TUE
+  WED
+  THU
+  FRI
+  SAT
+  SUN
+}
+
+enum MeetingType {
+  ONLINE
+  OFFLINE
+}
+
+enum SlotStatus {
+  AVAILABLE
+  FULL
+  UNAVAILABLE
+}
+
+enum TimeOfDay {
+  MORNING
+  EVENING
+}
+
+/* -------------------- Core Models -------------------- */
+
 model User {
-  id    String  @id @default(uuid())
-  email String  @unique
-  name  String?
-  role  Role    @default(PATIENT)
+  id         Int     @id @default(autoincrement())
+  email      String  @unique
+  name       String?
+  role       Role    @default(PATIENT)
 
-  doctor  Doctor?
-  patient Patient?
-
+  // Google OAuth support
   provider   String?
   providerId String?
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  doctor     Doctor?
+  patient    Patient?
+
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([provider, providerId])
 }
 
 model Doctor {
-  id Int @id @default(autoincrement())
-  userId String @unique
-  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id        Int    @id @default(autoincrement())
+  userId    Int    @unique
+  user      User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+<<<<<<< HEAD
+  bio       String?
+  isActive  Boolean @default(true)
+
+  specialties   DoctorSpecialty[]
+  services      DoctorService[]
+
+  scheduleRules DoctorScheduleRule[]
+  slots         AvailabilitySlot[]
+=======
   specialization  String?
-  licenseNumber   String? @unique
   experienceYears Int?
   bio             String?
+>>>>>>> 94b275b (feat(auth): add Google OAuth login with role-based JWT guards)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
 
 model Patient {
-  id     String @id @default(uuid())
-  userId String @unique
-  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id         Int    @id @default(autoincrement())
+  userId     Int    @unique
+  user       User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   gender     String?
   dob        DateTime?
   bloodGroup String?
   phone      String?
 
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
+
+/* -------------------- Specialty & Service -------------------- */
+
+model Specialty {
+  id   Int    @id @default(autoincrement())
+  name String @unique
+
+  doctors DoctorSpecialty[]
+}
+
+model Service {
+  id   Int    @id @default(autoincrement())
+  name String @unique
+
+  doctors DoctorService[]
+}
+
+model DoctorSpecialty {
+  doctorId    Int
+  specialtyId Int
+
+  doctor    Doctor    @relation(fields: [doctorId], references: [id], onDelete: Cascade)
+  specialty Specialty @relation(fields: [specialtyId], references: [id], onDelete: Cascade)
+
+  @@id([doctorId, specialtyId])
+  @@index([specialtyId])
+}
+
+model DoctorService {
+  doctorId  Int
+  serviceId Int
+
+  doctor  Doctor  @relation(fields: [doctorId], references: [id], onDelete: Cascade)
+  service Service @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+
+  @@id([doctorId, serviceId])
+  @@index([serviceId])
+}
+
+/* -------------------- Clinic (for OFFLINE) -------------------- */
+
+model Clinic {
+  id       Int     @id @default(autoincrement())
+  name     String
+  address  String?
+  city     String?
+
+  rules    DoctorScheduleRule[]
+  slots    AvailabilitySlot[]
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+/* -------------------- Schedule Rules (Recurring Template) --------------------
+   Store time as minutes since midnight.
+   10:00 = 600, 13:00 = 780, 18:00 = 1080, 22:00 = 1320, 9:00 = 540, 11:30 = 690
+*/
+
+model DoctorScheduleRule {
+  id              Int        @id @default(autoincrement())
+  doctorId        Int
+  clinicId        Int?
+  meetingType     MeetingType
+
+  dayOfWeek       DayOfWeek
+  timeOfDay       TimeOfDay
+
+  startMinute     Int
+  endMinute       Int
+
+  slotDurationMin Int        @default(15)
+  capacityPerSlot Int        @default(1)
+  isActive        Boolean    @default(true)
+
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+
+  doctor          Doctor     @relation(fields: [doctorId], references: [id], onDelete: Cascade)
+  clinic          Clinic?    @relation(fields: [clinicId], references: [id])
+
+  @@index([doctorId, dayOfWeek, isActive])
+  @@unique([doctorId, meetingType, dayOfWeek, timeOfDay, startMinute, endMinute])
+}
+
+/* -------------------- Generated Slots (Bookable) -------------------- */
+
+model AvailabilitySlot {
+  id          Int        @id @default(autoincrement())
+  doctorId    Int
+  clinicId    Int?
+  meetingType MeetingType
+
+  date        DateTime   // normalize date to day-start in service (00:00)
+  startMinute Int
+  endMinute   Int
+  timeOfDay   TimeOfDay
+
+  // ✅ Add actual timestamps
+  startAt     DateTime
+  endAt       DateTime
+
+
+  capacity    Int        @default(1)
+  bookedCount Int        @default(0)
+  status      SlotStatus @default(AVAILABLE)
+
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  doctor      Doctor     @relation(fields: [doctorId], references: [id], onDelete: Cascade)
+  clinic      Clinic?    @relation(fields: [clinicId], references: [id])
+
+  @@unique([doctorId, date, meetingType, startMinute, endMinute])
+  @@index([doctorId, date, status])
 }

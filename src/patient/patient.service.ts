@@ -8,16 +8,20 @@ export class PatientService {
   constructor(private readonly prisma: PrismaService) {}
 
   async create(dto: CreatePatientDto) {
+    if (!dto.userId) throw new BadRequestException('userId is required');
+
     const existing = await this.prisma.patient.findUnique({
       where: { userId: dto.userId },
     });
-    if (existing) throw new BadRequestException('Patient profile already exists for this user');
+    if (existing) {
+      throw new BadRequestException('Patient profile already exists for this user');
+    }
 
     return this.prisma.patient.create({
       data: {
         userId: dto.userId,
         gender: dto.gender,
-        dob: dto.dob ? new Date(dto.dob) : undefined,
+        dob: dto.dob ? new Date(dto.dob) : null,
         bloodGroup: dto.bloodGroup,
         phone: dto.phone,
       },
@@ -44,11 +48,11 @@ export class PatientService {
     return this.prisma.patient.update({
       where: { id },
       data: {
-        userId: dto.userId,
         gender: dto.gender,
         dob: dto.dob ? new Date(dto.dob) : undefined,
         bloodGroup: dto.bloodGroup,
         phone: dto.phone,
+        // userId should NOT be updatable from client
       },
       include: { user: true },
     });
@@ -56,9 +60,22 @@ export class PatientService {
 
   async remove(id: string) {
     await this.findOne(id);
+    return this.prisma.patient.delete({ where: { id } });
+  }
 
-    return this.prisma.patient.delete({
-      where: { id },
+  // ✅ Used by Google OAuth "auto-create profile" (first login)
+  async ensurePatientProfile(userId: string) {
+    const existing = await this.prisma.patient.findUnique({ where: { userId } });
+    if (existing) return existing;
+
+    return this.prisma.patient.create({
+      data: {
+        userId,
+        gender: null,
+        dob: null,
+        bloodGroup: null,
+        phone: null,
+      },
     });
   }
 }

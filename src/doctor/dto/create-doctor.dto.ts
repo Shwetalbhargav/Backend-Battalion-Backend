@@ -1,6 +1,7 @@
 import { IsInt, IsOptional, IsString, Min } from 'class-validator';
 
 export class CreateDoctorDto {
+  @IsOptional()
   @IsString()
   userId: string;
 

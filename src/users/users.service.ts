@@ -32,7 +32,6 @@ export class UsersService {
   }
 
   async update(id: string, dto: UpdateUserDto) {
-    // ensures proper 404 instead of prisma error
     await this.findOne(id);
 
     return this.prisma.user.update({
@@ -50,5 +49,21 @@ export class UsersService {
   async remove(id: string) {
     await this.findOne(id);
     return this.prisma.user.delete({ where: { id } });
+  }
+
+  // ✅ Needed for Google OAuth auto-create/link flow
+  findByEmail(email: string) {
+    return this.prisma.user.findUnique({ where: { email } });
+  }
+
+  findByProvider(provider: string, providerId: string) {
+    return this.prisma.user.findFirst({ where: { provider, providerId } });
+  }
+
+  linkGoogle(userId: string, providerId: string) {
+    return this.prisma.user.update({
+      where: { id: userId },
+      data: { provider: 'GOOGLE', providerId },
+    });
   }
 }
