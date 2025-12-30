@@ -1,8 +1,9 @@
 import { IsDateString, IsOptional, IsString } from 'class-validator';
 
 export class CreatePatientDto {
+  @IsOptional()
   @IsString()
-  userId: string;
+  userId?: string;
 
   @IsOptional()
   @IsString()

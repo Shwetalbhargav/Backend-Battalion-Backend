@@ -66,7 +66,9 @@ model Doctor {
   userId    Int    @unique
   user      User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  bio       String?
+
+
+
   isActive  Boolean @default(true)
 
   specialties   DoctorSpecialty[]
@@ -74,6 +76,13 @@ model Doctor {
 
   scheduleRules DoctorScheduleRule[]
   slots         AvailabilitySlot[]
+
+
+
+  specialization  String?
+  experienceYears Int?
+  bio             String?
+
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

@@ -8,7 +8,8 @@ export class DoctorService {
   constructor(private readonly prisma: PrismaService) {}
 
   async create(dto: CreateDoctorDto) {
-    // Prevent double profile creation
+    if (!dto.userId) throw new BadRequestException('userId is required');
+
     const existing = await this.prisma.doctor.findUnique({
       where: { userId: dto.userId },
     });
@@ -19,10 +20,10 @@ export class DoctorService {
     return this.prisma.doctor.create({
       data: {
         userId: dto.userId,
-        specialization: dto.specialization,
-        licenseNumber: dto.licenseNumber,
-        experienceYears: dto.experienceYears,
-        bio: dto.bio,
+        specialization: dto.specialization ?? '',
+        licenseNumber: dto.licenseNumber ?? '',
+        experienceYears: dto.experienceYears ?? 0,
+        bio: dto.bio ?? '',
       },
       include: { user: true },
     });
@@ -56,6 +57,22 @@ export class DoctorService {
     return this.prisma.doctor.delete({
       where: { id },
       include: { user: true },
+    });
+  }
+
+  // Used by Google OAuth auto-create profile on first login
+  async ensureDoctorProfile(userId: string) {
+    const existing = await this.prisma.doctor.findUnique({ where: { userId } });
+    if (existing) return existing;
+
+    return this.prisma.doctor.create({
+      data: {
+        userId,
+        specialization: '',
+        licenseNumber: '',
+        experienceYears: 0,
+        bio: '',
+      },
     });
   }
 }
