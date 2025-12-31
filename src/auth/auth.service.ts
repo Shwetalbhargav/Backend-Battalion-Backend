@@ -1,9 +1,10 @@
+// src/auth/auth.service.ts
 import { Injectable } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
+import { Role } from '@prisma/client';
 import { UsersService } from '../users/users.service';
 import { DoctorService } from '../doctor/doctor.service';
 import { PatientService } from '../patient/patient.service';
-import { Role } from '@prisma/client';
 
 @Injectable()
 export class AuthService {
@@ -14,46 +15,22 @@ export class AuthService {
     private readonly patients: PatientService,
   ) {}
 
-  async findOrCreateGoogleUser(payload: {
+  async findOrCreateGoogleUser(input: {
     email: string;
-    name?: string | null;
+    name: string;
     providerId: string;
-    role: Role; // 'DOCTOR' | 'PATIENT'
+    role: Role;
   }) {
-    // 1) already linked to google?
-    const byProvider = await this.users.findByProvider('google', payload.providerId);
-    if (byProvider) {
-      await this.ensureProfile(byProvider.id, byProvider.role);
-      return byProvider;
-    }
+    const user = await this.users.findOrCreateGoogleUser(input);
 
-    // 2) existing email? link google
-    const byEmail = await this.users.findByEmail(payload.email);
-    if (byEmail) {
-      const linked = await this.users.linkGoogle(byEmail.id, payload.providerId); // ✅ number
-      await this.ensureProfile(linked.id, linked.role);
-      return linked;
-    }
-
-    // 3) create new user
-    const created = await this.users.create({
-      email: payload.email,
-      name: payload.name ?? null,
-      role: payload.role,
-      provider: 'google',
-      providerId: payload.providerId,
-    } as any);
-
-    await this.ensureProfile(created.id, created.role);
-    return created;
-  }
-
-  private async ensureProfile(userId: number, role: Role) {
-    if (role === 'DOCTOR') {
-      await this.doctors.ensureDoctorProfile(userId); // ✅ number
+    // ✅ create doctor/patient profile row if missing
+    if (user.role === Role.DOCTOR) {
+      await this.doctors.ensureDoctorProfile(user.id);
     } else {
-      await this.patients.ensurePatientProfile(userId); // ✅ number
+      await this.patients.ensurePatientProfile(user.id);
     }
+
+    return user;
   }
 
   async signJwt(user: { id: number; role: Role; email: string }) {

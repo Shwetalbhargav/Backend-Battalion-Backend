@@ -1,8 +1,10 @@
-import { Module } from '@nestjs/common';
+// src/app.module.ts
+import { Module, Controller, Get } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
-import { Controller, Get } from '@nestjs/common';
-import { PrismaService } from './prisma/prisma.service';
+
 import { PrismaModule } from './prisma/prisma.module';
+import { PrismaService } from './prisma/prisma.service';
+
 import { AuthModule } from './auth/auth.module';
 import { UsersModule } from './users/users.module';
 import { DoctorModule } from './doctor/doctor.module';
@@ -11,18 +13,19 @@ import { ScheduleRulesModule } from './schedule-rules/schedule-rules.module';
 import { AvailabilitySlotsModule } from './availability-slots/availability-slots.module';
 
 @Controller('health')
-export class HealthController {
+class HealthController {
   constructor(private readonly prisma: PrismaService) {}
 
-  @Get('db')
-  async db() {
+  @Get()
+  async health() {
+    // optional DB ping
     await this.prisma.$queryRaw`SELECT 1`;
-    return { ok: true };
+    return { status: 'ok' };
   }
 }
+
 @Module({
   imports: [
-    // 🔥 MUST BE FIRST
     ConfigModule.forRoot({
       isGlobal: true,
       envFilePath: '.env',
@@ -36,5 +39,6 @@ export class HealthController {
     ScheduleRulesModule,
     AvailabilitySlotsModule,
   ],
+  controllers: [HealthController],
 })
 export class AppModule {}
