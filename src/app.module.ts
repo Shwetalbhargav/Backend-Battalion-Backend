@@ -16,12 +16,16 @@ import { AvailabilitySlotsModule } from './availability-slots/availability-slots
     DoctorModule,
     PatientModule,
     UsersModule,
-<<<<<<< HEAD
+
+
     ScheduleRulesModule,
     AvailabilitySlotsModule,
-=======
+
     AuthModule,
->>>>>>> 94b275b (feat(auth): add Google OAuth login with role-based JWT guards)
+
+    ScheduleRulesModule,
+    AvailabilitySlotsModule,
+ intern/shwetal-main
   ],
 })
 export class AppModule {}
