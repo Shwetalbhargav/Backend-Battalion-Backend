@@ -12,7 +12,7 @@ export class UsersService {
       data: {
         email: dto.email,
         name: dto.name,
-        role: dto.role, // optional (defaults to PATIENT in schema)
+        role: dto.role,
         provider: dto.provider,
         providerId: dto.providerId,
       },
