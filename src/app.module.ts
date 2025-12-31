@@ -18,7 +18,6 @@ class HealthController {
 
   @Get()
   async health() {
-    // optional DB ping
     await this.prisma.$queryRaw`SELECT 1`;
     return { status: 'ok' };
   }
@@ -26,10 +25,7 @@ class HealthController {
 
 @Module({
   imports: [
-    ConfigModule.forRoot({
-      isGlobal: true,
-      envFilePath: '.env',
-    }),
+    ConfigModule.forRoot({ isGlobal: true, envFilePath: '.env' }),
 
     PrismaModule,
     AuthModule,
