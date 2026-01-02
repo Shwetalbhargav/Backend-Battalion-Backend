@@ -1,13 +1,11 @@
-import { IsEnum, IsInt, IsOptional, Min } from 'class-validator';
-import { Type } from 'class-transformer';
+import { IsIn, IsInt, IsOptional, Min } from 'class-validator';
 
 export class UpdateSlotDto {
   @IsOptional()
-  @IsEnum(['AVAILABLE', 'FULL', 'UNAVAILABLE'])
+  @IsIn(['AVAILABLE', 'FULL', 'UNAVAILABLE'])
   status?: 'AVAILABLE' | 'FULL' | 'UNAVAILABLE';
 
   @IsOptional()
-  @Type(() => Number)
   @IsInt()
   @Min(0)
   bookedCount?: number;

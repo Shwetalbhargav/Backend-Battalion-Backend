@@ -1,29 +1,35 @@
-import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import { ScheduleRulesService } from './schedule-rules.service';
 import { CreateScheduleRuleDto } from './dto/create-schedule-rule.dto';
-import { ParseIntPipe } from '@nestjs/common';
-
+import { UpdateScheduleRuleDto } from './dto/update-schedule-rule.dto';
 
 @Controller('api/v1/schedule-rules')
 export class ScheduleRulesController {
-  constructor(private readonly service: ScheduleRulesService) {}
+  constructor(private readonly scheduleRulesService: ScheduleRulesService) {}
 
   @Post()
   create(@Body() dto: CreateScheduleRuleDto) {
-    return this.service.create(dto);
+    return this.scheduleRulesService.create(dto);
   }
 
+  // Optional filter: /api/v1/schedule-rules?doctorId=1
   @Get()
   findAll(@Query('doctorId') doctorId?: string) {
-  return this.service.findAll(doctorId ? Number(doctorId) : undefined);
-}
+    return this.scheduleRulesService.findAll({ doctorId });
+  }
 
-  // Bulk defaults endpoint
-  @Post('bulk-defaults/:doctorId')
-  bulkDefaults(
-    @Param('doctorId', ParseIntPipe) doctorId: number,
-    @Body() body: { clinicId?: number },
-  ) {
-    return this.service.bulkCreateDefaults(doctorId, body?.clinicId);
+  @Get(':id')
+  findOne(@Param('id') id: string) {
+    return this.scheduleRulesService.findOne(id);
+  }
+
+  @Patch(':id')
+  update(@Param('id') id: string, @Body() dto: UpdateScheduleRuleDto) {
+    return this.scheduleRulesService.update(id, dto);
+  }
+
+  @Delete(':id')
+  remove(@Param('id') id: string) {
+    return this.scheduleRulesService.remove(id);
   }
 }

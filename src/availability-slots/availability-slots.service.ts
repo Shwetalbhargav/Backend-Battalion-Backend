@@ -3,163 +3,304 @@ import { PrismaService } from '../prisma/prisma.service';
 import { DayOfWeek, MeetingType, SlotStatus, TimeOfDay } from '@prisma/client';
 import { UpdateSlotDto } from './dto/update-slot.dto';
 
-function normalizeToDayStartUTC(d: Date) {
+function normalizeToDayStartUTC(d: Date): Date {
   return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 0, 0, 0, 0));
 }
 
+function addMinutesToDate(dayStartUtc: Date, minutes: number): Date {
+  return new Date(dayStartUtc.getTime() + minutes * 60_000);
+}
+
 function dayOfWeekUTC(date: Date): DayOfWeek {
-  const map: DayOfWeek[] = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
+  // JS getUTCDay(): 0=Sun..6=Sat
+  const map: DayOfWeek[] = [
+    DayOfWeek.SUN,
+    DayOfWeek.MON,
+    DayOfWeek.TUE,
+    DayOfWeek.WED,
+    DayOfWeek.THU,
+    DayOfWeek.FRI,
+    DayOfWeek.SAT,
+  ];
   return map[date.getUTCDay()];
-}
-
-function addMinutesToDate(date: Date, minutes: number) {
-  return new Date(date.getTime() + minutes * 60 * 1000);
-}
-
-function clampMinute(min: number) {
-  if (!Number.isFinite(min) || min < 0 || min > 24 * 60) {
-    throw new BadRequestException('Minutes must be between 0 and 1440.');
-  }
-  return Math.floor(min);
 }
 
 @Injectable()
 export class AvailabilitySlotsService {
   constructor(private readonly prisma: PrismaService) {}
 
-  // ---------------------------
-  // Controller-facing methods (missing before)
-  // ---------------------------
-
-  async generateSlots(doctorId: number, dateFrom: string, dateTo: string) {
-    return this.generateSlotsForDoctorRange({
-      doctorId,
-      fromDate: new Date(dateFrom),
-      toDate: new Date(dateTo),
-    });
+  private parseDoctorId(doctorId: string): number {
+    const id = Number(doctorId);
+    if (!Number.isInteger(id) || id <= 0) {
+      throw new BadRequestException('doctorId must be a positive integer string');
+    }
+    return id;
   }
 
-  async search(filters: {
-    doctorId?: string;
-    date?: string;
-    meetingType?: 'ONLINE' | 'OFFLINE';
-    timeOfDay?: 'MORNING' | 'EVENING';
-    status?: 'AVAILABLE' | 'FULL' | 'UNAVAILABLE';
+  private buildLocationKey(input: {
+    meetingType: MeetingType;
+    clinicId: number | null | undefined;
+    startMinute: number;
+    endMinute: number;
+  }): string {
+    const clinicPart = input.clinicId ? `CLINIC:${input.clinicId}` : 'NOCLINIC';
+    // Include time range to avoid collisions if multiple sessions exist for same day/timeOfDay.
+    return `${input.meetingType}:${clinicPart}:${input.startMinute}-${input.endMinute}`;
+  }
+
+  async generateSlots(doctorId: string, dateFromStr: string, dateToStr: string) {
+    const did = this.parseDoctorId(doctorId);
+
+    const from = normalizeToDayStartUTC(new Date(dateFromStr));
+    const to = normalizeToDayStartUTC(new Date(dateToStr));
+
+    if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime())) {
+      throw new BadRequestException('dateFrom/dateTo must be valid ISO dates (YYYY-MM-DD)');
+    }
+    if (to < from) {
+      throw new BadRequestException('dateTo must be >= dateFrom');
+    }
+
+    let created = 0;
+
+    // inclusive loop by day
+    for (let d = new Date(from); d <= to; d = new Date(d.getTime() + 24 * 60 * 60 * 1000)) {
+      const dow = dayOfWeekUTC(d);
+      const date = normalizeToDayStartUTC(d);
+
+      const rules = await this.prisma.doctorScheduleRule.findMany({
+        where: { doctorId: did, dayOfWeek: dow, isActive: true },
+      });
+
+      if (!rules.length) continue;
+
+      const rows: Array<{
+        sessionId: number;
+        doctorId: number;
+        clinicId: number | null;
+        meetingType: MeetingType;
+        locationKey: string;
+        date: Date;
+        timeOfDay: TimeOfDay;
+        startMinute: number;
+        endMinute: number;
+        startAt: Date;
+        endAt: Date;
+        capacity: number;
+        bookedCount: number;
+        status: SlotStatus;
+      }> = [];
+
+      for (const rule of rules) {
+        const duration = rule.slotDurationMin;
+        const range = rule.endMinute - rule.startMinute;
+        const count = Math.floor(range / duration);
+        if (count <= 0) continue;
+
+        const locationKey = this.buildLocationKey({
+          meetingType: rule.meetingType,
+          clinicId: rule.clinicId,
+          startMinute: rule.startMinute,
+          endMinute: rule.endMinute,
+        });
+
+        // Avoid relying on Prisma's generated compound-unique key name:
+        // do findFirst + create instead of upsert.
+        const existingSession = await this.prisma.availabilitySession.findFirst({
+          where: {
+            doctorId: did,
+            date,
+            meetingType: rule.meetingType,
+            timeOfDay: rule.timeOfDay,
+            locationKey,
+          },
+        });
+
+        const session =
+          existingSession ??
+          (await this.prisma.availabilitySession.create({
+            data: {
+              doctorId: did,
+              clinicId: rule.clinicId,
+              meetingType: rule.meetingType,
+              date,
+              timeOfDay: rule.timeOfDay,
+              locationKey,
+              startMinute: rule.startMinute,
+              endMinute: rule.endMinute,
+            },
+          }));
+
+        for (let i = 0; i < count; i++) {
+          const startMinute = rule.startMinute + i * duration;
+          const endMinute = startMinute + duration;
+
+          rows.push({
+            sessionId: session.id,
+            doctorId: did,
+            clinicId: rule.clinicId,
+            meetingType: rule.meetingType,
+            locationKey,
+            date,
+            timeOfDay: rule.timeOfDay,
+            startMinute,
+            endMinute,
+            startAt: addMinutesToDate(date, startMinute),
+            endAt: addMinutesToDate(date, endMinute),
+            capacity: rule.capacityPerSlot,
+            bookedCount: 0,
+            status: SlotStatus.AVAILABLE,
+          });
+        }
+      }
+
+      if (rows.length === 0) continue;
+
+      const res = await this.prisma.availabilitySlot.createMany({
+        data: rows,
+        skipDuplicates: true,
+      });
+
+      created += res.count;
+    }
+
+    return { created };
+  }
+
+  async searchSlots(query: {
+    doctorId: string;
+    dateFrom: string;
+    dateTo: string;
+    meetingType?: MeetingType;
+    timeOfDay?: TimeOfDay;
+    status?: SlotStatus;
   }) {
-    const where: any = {};
+    const did = this.parseDoctorId(query.doctorId);
+    const from = normalizeToDayStartUTC(new Date(query.dateFrom));
+    const to = normalizeToDayStartUTC(new Date(query.dateTo));
 
-    if (filters.doctorId !== undefined) {
-      const parsed = Number(filters.doctorId);
-      if (!Number.isFinite(parsed)) throw new BadRequestException('doctorId must be a number');
-      where.doctorId = parsed;
+    if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime())) {
+      throw new BadRequestException('dateFrom/dateTo must be valid ISO dates (YYYY-MM-DD)');
     }
-
-    if (filters.date) {
-      const d = new Date(filters.date);
-      if (isNaN(d.getTime())) throw new BadRequestException('Invalid date');
-      where.date = normalizeToDayStartUTC(d);
+    if (to < from) {
+      throw new BadRequestException('dateTo must be >= dateFrom');
     }
-
-    if (filters.meetingType) where.meetingType = filters.meetingType as MeetingType;
-    if (filters.timeOfDay) where.timeOfDay = filters.timeOfDay as TimeOfDay;
-    if (filters.status) where.status = filters.status as SlotStatus;
 
     return this.prisma.availabilitySlot.findMany({
-      where,
+      where: {
+        doctorId: did,
+        date: { gte: from, lte: to },
+        meetingType: query.meetingType,
+        timeOfDay: query.timeOfDay,
+        status: query.status,
+      },
       orderBy: [{ date: 'asc' }, { startMinute: 'asc' }],
     });
   }
 
-  async update(id: string, dto: UpdateSlotDto) {
-    const parsedId = Number(id);
-    if (!Number.isFinite(parsedId)) throw new BadRequestException('id must be a number');
+  async createExtraSlots(input: {
+    doctorId: string;
+    date: string;
+    meetingType: 'ONLINE' | 'OFFLINE';
+    timeOfDay: 'MORNING' | 'EVENING';
+    startMinute: number;
+    endMinute: number;
+    slotDurationMin?: number;
+    capacity?: number;
+  }) {
+    const did = this.parseDoctorId(input.doctorId);
+    const date = normalizeToDayStartUTC(new Date(input.date));
 
-    const existing = await this.prisma.availabilitySlot.findUnique({ where: { id: parsedId } });
-    if (!existing) throw new NotFoundException('Slot not found');
-
-    return this.prisma.availabilitySlot.update({
-      where: { id: parsedId },
-      data: {
-        status: dto.status as SlotStatus | undefined,
-        bookedCount: dto.bookedCount ?? undefined,
-      },
-    });
-  }
-
-  // ---------------------------
-  // Internal methods (your core logic)
-  // ---------------------------
-
-  async getActiveRules(doctorId: number) {
-    return this.prisma.doctorScheduleRule.findMany({
-      where: { doctorId, isActive: true },
-      orderBy: [{ dayOfWeek: 'asc' }, { timeOfDay: 'asc' }, { startMinute: 'asc' }],
-    });
-  }
-
-  async generateSlotsForDoctorRange(params: { doctorId: number; fromDate: Date; toDate: Date }) {
-    const { doctorId } = params;
-    const from = normalizeToDayStartUTC(params.fromDate);
-    const to = normalizeToDayStartUTC(params.toDate);
-
-    if (to < from) throw new BadRequestException('toDate must be >= fromDate');
-
-    const rules = await this.getActiveRules(doctorId);
-
-    for (let cursor = new Date(from); cursor <= to; cursor = addMinutesToDate(cursor, 24 * 60)) {
-      const dow = dayOfWeekUTC(cursor);
-      const dayRules = rules.filter((r) => r.dayOfWeek === dow);
-      if (!dayRules.length) continue;
-
-      for (const r of dayRules) {
-        const startMinute = clampMinute(r.startMinute);
-        const endMinute = clampMinute(r.endMinute);
-        const duration = clampMinute(r.slotDurationMin);
-
-        if (endMinute <= startMinute) continue;
-        if (duration <= 0) continue;
-
-        for (let m = startMinute; m + duration <= endMinute; m += duration) {
-          const startAt = addMinutesToDate(cursor, m);
-          const endAt = addMinutesToDate(cursor, m + duration);
-          const clinicId: number | null = r.clinicId ?? null;
-
-          await this.prisma.availabilitySlot.upsert({
-            where: {
-              doctorId_date_meetingType_startMinute_endMinute: {
-                doctorId,
-                date: cursor,
-                meetingType: r.meetingType,
-                startMinute: m,
-                endMinute: m + duration,
-              },
-            },
-            create: {
-              doctorId,
-              clinicId,
-              meetingType: r.meetingType,
-              date: cursor,
-              startMinute: m,
-              endMinute: m + duration,
-              timeOfDay: r.timeOfDay as TimeOfDay,
-              startAt,
-              endAt,
-              capacity: r.capacityPerSlot,
-              bookedCount: 0,
-              status: 'AVAILABLE' as SlotStatus,
-            },
-            update: {
-              clinicId,
-              timeOfDay: r.timeOfDay as TimeOfDay,
-              startAt,
-              endAt,
-              capacity: r.capacityPerSlot,
-            },
-          });
-        }
-      }
+    if (Number.isNaN(date.getTime())) {
+      throw new BadRequestException('date must be a valid ISO date (YYYY-MM-DD)');
     }
 
-    return { ok: true };
+    const slotDuration = input.slotDurationMin ?? 15;
+    const capacity = input.capacity ?? 1;
+
+    const range = input.endMinute - input.startMinute;
+    const count = Math.floor(range / slotDuration);
+    if (count <= 0) {
+      throw new BadRequestException('Invalid time range / slotDurationMin');
+    }
+
+    const meetingType = input.meetingType as MeetingType;
+    const timeOfDay = input.timeOfDay as TimeOfDay;
+
+    const locationKey = this.buildLocationKey({
+      meetingType,
+      clinicId: null,
+      startMinute: input.startMinute,
+      endMinute: input.endMinute,
+    });
+
+    const existingSession = await this.prisma.availabilitySession.findFirst({
+      where: {
+        doctorId: did,
+        date,
+        meetingType,
+        timeOfDay,
+        locationKey,
+      },
+    });
+
+    const session =
+      existingSession ??
+      (await this.prisma.availabilitySession.create({
+        data: {
+          doctorId: did,
+          clinicId: null,
+          meetingType,
+          date,
+          timeOfDay,
+          locationKey,
+          startMinute: input.startMinute,
+          endMinute: input.endMinute,
+        },
+      }));
+
+    const rows = Array.from({ length: count }).map((_, i) => {
+      const startMinute = input.startMinute + i * slotDuration;
+      const endMinute = startMinute + slotDuration;
+
+      return {
+        sessionId: session.id,
+        doctorId: did,
+        clinicId: null,
+        meetingType,
+        locationKey,
+        date,
+        timeOfDay,
+        startMinute,
+        endMinute,
+        startAt: addMinutesToDate(date, startMinute),
+        endAt: addMinutesToDate(date, endMinute),
+        capacity,
+        bookedCount: 0,
+        status: SlotStatus.AVAILABLE,
+      };
+    });
+
+    const res = await this.prisma.availabilitySlot.createMany({
+      data: rows,
+      skipDuplicates: true,
+    });
+
+    return { created: res.count };
+  }
+
+  async updateSlot(slotId: number, dto: UpdateSlotDto) {
+    const existing = await this.prisma.availabilitySlot.findUnique({ where: { id: slotId } });
+    if (!existing) throw new NotFoundException('Slot not found');
+
+    // Only allow updates for provided fields
+    const data: any = {};
+    if (dto.status) data.status = dto.status;
+    if (dto.bookedCount !== undefined) data.bookedCount = dto.bookedCount;
+
+    return this.prisma.availabilitySlot.update({
+      where: { id: slotId },
+      data,
+    });
   }
 }

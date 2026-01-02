@@ -4,9 +4,11 @@ generator client {
 
 datasource db {
   provider = "postgresql"
- }
+}
 
-/* -------------------- Enums -------------------- */
+/**
+ * -------------------- Enums --------------------
+ */
 
 enum Role {
   DOCTOR
@@ -39,69 +41,65 @@ enum TimeOfDay {
   EVENING
 }
 
-/* -------------------- Core Models -------------------- */
+/**
+ * -------------------- Core Models --------------------
+ */
 
 model User {
-  id         Int     @id @default(autoincrement())
-  email      String  @unique
-  name       String?
-  role       Role    @default(PATIENT)
+  id    Int     @id @default(autoincrement())
+  email String  @unique
+  name  String?
+  role  Role    @default(PATIENT)
 
   // Google OAuth support
   provider   String?
   providerId String?
 
-  doctor     Doctor?
-  patient    Patient?
+  doctor  Doctor?
+  patient Patient?
 
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@unique([provider, providerId])
 }
 
 model Doctor {
-  id        Int    @id @default(autoincrement())
-  userId    Int    @unique
-  user      User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id     Int  @id @default(autoincrement())
+  userId Int  @unique
+  user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  bio      String?
+  isActive Boolean @default(true)
 
-
-
-  isActive  Boolean @default(true)
-
-  specialties   DoctorSpecialty[]
-  services      DoctorService[]
+  specialties DoctorSpecialty[]
+  services    DoctorService[]
 
   scheduleRules DoctorScheduleRule[]
   slots         AvailabilitySlot[]
 
-
-
-  specialization  String?
-  experienceYears Int?
-  bio             String?
-
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt            DateTime              @default(now())
+  updatedAt            DateTime              @updatedAt
+  availabilitySessions AvailabilitySession[]
 }
 
 model Patient {
-  id         Int    @id @default(autoincrement())
-  userId     Int    @unique
-  user       User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id     Int  @id @default(autoincrement())
+  userId Int  @unique
+  user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   gender     String?
   dob        DateTime?
   bloodGroup String?
   phone      String?
 
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
-/* -------------------- Specialty & Service -------------------- */
+/**
+ * -------------------- Specialty & Service --------------------
+ */
 
 model Specialty {
   id   Int    @id @default(autoincrement())
@@ -139,80 +137,108 @@ model DoctorService {
   @@index([serviceId])
 }
 
-/* -------------------- Clinic (for OFFLINE) -------------------- */
+/**
+ * -------------------- Clinic (for OFFLINE) --------------------
+ */
 
 model Clinic {
-  id       Int     @id @default(autoincrement())
-  name     String
-  address  String?
-  city     String?
+  id      Int     @id @default(autoincrement())
+  name    String
+  address String?
+  city    String?
 
-  rules    DoctorScheduleRule[]
-  slots    AvailabilitySlot[]
+  rules DoctorScheduleRule[]
+  slots AvailabilitySlot[]
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt            DateTime              @default(now())
+  updatedAt            DateTime              @updatedAt
+  availabilitySessions AvailabilitySession[]
 }
 
-/* -------------------- Schedule Rules (Recurring Template) --------------------
-   Store time as minutes since midnight.
-   10:00 = 600, 13:00 = 780, 18:00 = 1080, 22:00 = 1320, 9:00 = 540, 11:30 = 690
-*/
+/**
+ * -------------------- Schedule Rules (Recurring Template) --------------------
+ * Store time as minutes since midnight.
+ * 10:00 = 600, 13:00 = 780, 18:00 = 1080, 22:00 = 1320, 9:00 = 540, 11:30 = 690
+ */
 
 model DoctorScheduleRule {
-  id              Int        @id @default(autoincrement())
-  doctorId        Int
-  clinicId        Int?
-  meetingType     MeetingType
-
-  dayOfWeek       DayOfWeek
-  timeOfDay       TimeOfDay
-
-  startMinute     Int
-  endMinute       Int
-
-  slotDurationMin Int        @default(15)
-  capacityPerSlot Int        @default(1)
-  isActive        Boolean    @default(true)
-
-  createdAt       DateTime   @default(now())
-  updatedAt       DateTime   @updatedAt
-
-  doctor          Doctor     @relation(fields: [doctorId], references: [id], onDelete: Cascade)
-  clinic          Clinic?    @relation(fields: [clinicId], references: [id])
-
-  @@index([doctorId, dayOfWeek, isActive])
-  @@unique([doctorId, meetingType, dayOfWeek, timeOfDay, startMinute, endMinute])
-}
-
-/* -------------------- Generated Slots (Bookable) -------------------- */
-
-model AvailabilitySlot {
-  id          Int        @id @default(autoincrement())
+  id          Int         @id @default(autoincrement())
   doctorId    Int
   clinicId    Int?
   meetingType MeetingType
 
-  date        DateTime   // normalize date to day-start in service (00:00)
+  dayOfWeek DayOfWeek
+  timeOfDay TimeOfDay
+
+  startMinute Int
+  endMinute   Int
+
+  slotDurationMin Int     @default(15)
+  capacityPerSlot Int     @default(1)
+  isActive        Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  doctor Doctor  @relation(fields: [doctorId], references: [id], onDelete: Cascade)
+  clinic Clinic? @relation(fields: [clinicId], references: [id])
+
+  @@unique([doctorId, meetingType, dayOfWeek, timeOfDay, startMinute, endMinute])
+  @@index([doctorId, dayOfWeek, isActive])
+}
+
+/**
+ * -------------------- Generated Slots (Bookable) --------------------
+ */
+
+model AvailabilitySlot {
+  id        Int @id @default(autoincrement())
+  sessionId Int
+
+  doctorId    Int
+  clinicId    Int?
+  meetingType MeetingType
+  locationKey String      @default("NONE")
+
+  date        DateTime
   startMinute Int
   endMinute   Int
   timeOfDay   TimeOfDay
 
-  // ✅ Add actual timestamps
-  startAt     DateTime
-  endAt       DateTime
-
+  startAt DateTime
+  endAt   DateTime
 
   capacity    Int        @default(1)
   bookedCount Int        @default(0)
   status      SlotStatus @default(AVAILABLE)
 
-  createdAt   DateTime   @default(now())
-  updatedAt   DateTime   @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  doctor      Doctor     @relation(fields: [doctorId], references: [id], onDelete: Cascade)
-  clinic      Clinic?    @relation(fields: [clinicId], references: [id])
+  session AvailabilitySession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  doctor  Doctor              @relation(fields: [doctorId], references: [id], onDelete: Cascade)
+  clinic  Clinic?             @relation(fields: [clinicId], references: [id])
 
-  @@unique([doctorId, date, meetingType, startMinute, endMinute])
+  @@unique([sessionId, startMinute])
   @@index([doctorId, date, status])
+}
+
+model AvailabilitySession {
+  id          Int         @id @default(autoincrement())
+  doctorId    Int
+  clinicId    Int?
+  meetingType MeetingType
+  date        DateTime
+  timeOfDay   TimeOfDay
+  locationKey String
+
+  startMinute Int
+  endMinute   Int
+
+  doctor            Doctor             @relation(fields: [doctorId], references: [id], onDelete: Cascade)
+  clinic            Clinic?            @relation(fields: [clinicId], references: [id])
+  availabilitySlots AvailabilitySlot[]
+
+  @@unique([doctorId, date, meetingType, timeOfDay, locationKey])
+  @@index([doctorId, date, timeOfDay])
 }
