@@ -1,8 +1,10 @@
+// src/auth/google.strategy.ts
 import { PassportStrategy } from '@nestjs/passport';
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { Strategy, VerifyCallback } from 'passport-google-oauth20';
 import { ConfigService } from '@nestjs/config';
-import { AuthService } from "./auth.service";
+import { AuthService } from './auth.service';
+import { Role } from '@prisma/client';
 
 @Injectable()
 export class GoogleStrategy extends PassportStrategy(Strategy, 'google') {
@@ -26,6 +28,9 @@ export class GoogleStrategy extends PassportStrategy(Strategy, 'google') {
     // put it into OAuth "state"
     return role ? { state: role } : {};
   }
+      passReqToCallback: true,
+    });
+  }
 
   async validate(
     req: any,
@@ -48,7 +53,11 @@ export class GoogleStrategy extends PassportStrategy(Strategy, 'google') {
       const role = roleFromState === 'DOCTOR' || roleFromState === 'PATIENT'
         ? roleFromState
         : 'PATIENT';
+      const name = profile?.displayName ?? 'Unknown';
+      const providerId = profile?.id;
 
+      const rawRole = (req?.query?.state ?? 'PATIENT').toString().toUpperCase();
+      const role = rawRole === 'DOCTOR' ? Role.DOCTOR : Role.PATIENT;
       const user = await this.auth.findOrCreateGoogleUser({
         email,
         name,
@@ -56,10 +65,11 @@ export class GoogleStrategy extends PassportStrategy(Strategy, 'google') {
         providerId,
         role,
       });
-
       done(null, user);
     } catch (err) {
       done(err, false);
+    } catch (e) {
+      done(e, false);
     }
   }
 }

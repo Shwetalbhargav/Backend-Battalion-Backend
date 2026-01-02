@@ -1,8 +1,8 @@
-import { IsEnum, IsInt, IsOptional, Min } from 'class-validator';
+import { IsIn, IsInt, IsOptional, Min } from 'class-validator';
 
 export class UpdateSlotDto {
   @IsOptional()
-  @IsEnum(['AVAILABLE', 'FULL', 'UNAVAILABLE'])
+  @IsIn(['AVAILABLE', 'FULL', 'UNAVAILABLE'])
   status?: 'AVAILABLE' | 'FULL' | 'UNAVAILABLE';
 
   @IsOptional()

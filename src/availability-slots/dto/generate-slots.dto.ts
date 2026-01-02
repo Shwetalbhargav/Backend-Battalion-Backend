@@ -1,12 +1,14 @@
-import { IsDateString, IsOptional, IsString } from 'class-validator';
+import { IsDateString, IsInt } from 'class-validator';
+import { Type } from 'class-transformer';
 
 export class GenerateSlotsDto {
-  @IsString()
-  doctorId: string;
+  @Type(() => Number)
+  @IsInt()
+  doctorId: number;
 
   @IsDateString()
-  dateFrom: string; // YYYY-MM-DD or ISO date
+  dateFrom: string;
 
   @IsDateString()
-  dateTo: string; // inclusive
+  dateTo: string;
 }
