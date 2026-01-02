@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateDoctorDto } from './dto/create-doctor.dto';
 import { UpdateDoctorDto } from './dto/update-doctor.dto';
@@ -7,10 +7,20 @@ import { UpdateDoctorDto } from './dto/update-doctor.dto';
 export class DoctorService {
   constructor(private readonly prisma: PrismaService) {}
 
+  private toInt(value: unknown, field: string): number {
+    const n = typeof value === 'number' ? value : Number(value);
+    if (!Number.isInteger(n) || n <= 0) {
+      throw new BadRequestException(`${field} must be a positive integer`);
+    }
+    return n;
+  }
+
   async create(dto: CreateDoctorDto) {
-    // Prevent double profile creation
+    const userId = this.toInt((dto as any).userId, 'userId');
+
+    // prevent duplicate profile for same user
     const existing = await this.prisma.doctor.findUnique({
-      where: { userId: dto.userId },
+      where: { userId },
     });
     if (existing) {
       throw new BadRequestException('Doctor profile already exists for this user');
@@ -18,43 +28,72 @@ export class DoctorService {
 
     return this.prisma.doctor.create({
       data: {
-        userId: dto.userId,
-        specialization: dto.specialization,
-        licenseNumber: dto.licenseNumber,
-        experienceYears: dto.experienceYears,
-        bio: dto.bio,
+        userId,
+        bio: (dto as any).bio ?? undefined,
+        isActive: (dto as any).isActive ?? true,
       },
       include: { user: true },
     });
   }
 
-  findAll() {
-    return this.prisma.doctor.findMany({ include: { user: true } });
-  }
+  findAll(query?: { userId?: string; isActive?: string }) {
+    const where: any = {};
 
-  findOne(id: number) {
-    return this.prisma.doctor.findUnique({
-      where: { id },
+    if (query?.userId) {
+      where.userId = this.toInt(query.userId, 'userId');
+    }
+
+    if (query?.isActive !== undefined) {
+      if (query.isActive === 'true') where.isActive = true;
+      else if (query.isActive === 'false') where.isActive = false;
+      else throw new BadRequestException('isActive must be "true" or "false"');
+    }
+
+    return this.prisma.doctor.findMany({
+      where,
       include: { user: true },
+      orderBy: { id: 'asc' },
     });
   }
 
-  update(id: number, dto: UpdateDoctorDto) {
+  async findOne(id: string) {
+    const doctorId = this.toInt(id, 'id');
+
+    const doctor = await this.prisma.doctor.findUnique({
+      where: { id: doctorId },
+      include: { user: true },
+    });
+
+    if (!doctor) throw new NotFoundException('Doctor not found');
+    return doctor;
+  }
+
+  async update(id: string, dto: UpdateDoctorDto) {
+    const doctorId = this.toInt(id, 'id');
+    await this.findOne(String(doctorId));
+
+    const data: any = {
+      bio: (dto as any).bio ?? undefined,
+      isActive: (dto as any).isActive ?? undefined,
+    };
+
+    if ((dto as any).userId !== undefined) {
+      data.userId = this.toInt((dto as any).userId, 'userId');
+    }
+
     return this.prisma.doctor.update({
-      where: { id },
-      data: {
-        specialization: dto.specialization,
-        licenseNumber: dto.licenseNumber,
-        experienceYears: dto.experienceYears,
-        bio: dto.bio,
-      },
+      where: { id: doctorId },
+      data,
       include: { user: true },
     });
   }
 
-  remove(id: number) {
+  async remove(id: string) {
+    const doctorId = this.toInt(id, 'id');
+    await this.findOne(String(doctorId));
+
     return this.prisma.doctor.delete({
-      where: { id },
+      where: { id: doctorId },
       include: { user: true },
     });
   }

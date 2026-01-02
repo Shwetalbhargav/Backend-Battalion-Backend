@@ -7,15 +7,25 @@ import { UpdatePatientDto } from './dto/update-patient.dto';
 export class PatientService {
   constructor(private readonly prisma: PrismaService) {}
 
+  private toInt(value: unknown, fieldName: string): number {
+    const n = typeof value === 'number' ? value : Number(value);
+    if (!Number.isInteger(n) || n <= 0) {
+      throw new BadRequestException(`${fieldName} must be a positive integer`);
+    }
+    return n;
+  }
+
   async create(dto: CreatePatientDto) {
+    const userId = this.toInt(dto.userId, 'userId');
+
     const existing = await this.prisma.patient.findUnique({
-      where: { userId: dto.userId },
+      where: { userId },
     });
     if (existing) throw new BadRequestException('Patient profile already exists for this user');
 
     return this.prisma.patient.create({
       data: {
-        userId: dto.userId,
+        userId,
         gender: dto.gender,
         dob: dto.dob ? new Date(dto.dob) : undefined,
         bloodGroup: dto.bloodGroup,
@@ -30,35 +40,46 @@ export class PatientService {
   }
 
   async findOne(id: string) {
+    const patientId = this.toInt(id, 'id');
+
     const patient = await this.prisma.patient.findUnique({
-      where: { id },
+      where: { id: patientId },
       include: { user: true },
     });
+
     if (!patient) throw new NotFoundException('Patient not found');
     return patient;
   }
 
   async update(id: string, dto: UpdatePatientDto) {
-    await this.findOne(id);
+    const patientId = this.toInt(id, 'id');
+    await this.findOne(String(patientId));
+
+    const data: any = {
+      gender: dto.gender,
+      dob: dto.dob ? new Date(dto.dob) : undefined,
+      bloodGroup: dto.bloodGroup,
+      phone: dto.phone,
+    };
+
+    // IMPORTANT: only set userId if provided
+    if (dto.userId !== undefined) {
+      data.userId = this.toInt(dto.userId, 'userId');
+    }
 
     return this.prisma.patient.update({
-      where: { id },
-      data: {
-        userId: dto.userId,
-        gender: dto.gender,
-        dob: dto.dob ? new Date(dto.dob) : undefined,
-        bloodGroup: dto.bloodGroup,
-        phone: dto.phone,
-      },
+      where: { id: patientId },
+      data,
       include: { user: true },
     });
   }
 
   async remove(id: string) {
-    await this.findOne(id);
+    const patientId = this.toInt(id, 'id');
+    await this.findOne(String(patientId));
 
     return this.prisma.patient.delete({
-      where: { id },
+      where: { id: patientId },
     });
   }
 }

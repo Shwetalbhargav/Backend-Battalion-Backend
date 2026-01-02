@@ -1,18 +1,9 @@
-import {
-  Controller,
-  Get,
-  Post,
-  Body,
-  Patch,
-  Param,
-  Delete,
-  ParseIntPipe,
-} from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import { DoctorService } from './doctor.service';
 import { CreateDoctorDto } from './dto/create-doctor.dto';
 import { UpdateDoctorDto } from './dto/update-doctor.dto';
 
-@Controller('doctor')
+@Controller('api/v1/doctors')
 export class DoctorController {
   constructor(private readonly doctorService: DoctorService) {}
 
@@ -21,23 +12,26 @@ export class DoctorController {
     return this.doctorService.create(dto);
   }
 
+  // Optional filters:
+  // /api/v1/doctors?userId=1
+  // /api/v1/doctors?isActive=true
   @Get()
-  findAll() {
-    return this.doctorService.findAll();
+  findAll(@Query('userId') userId?: string, @Query('isActive') isActive?: string) {
+    return this.doctorService.findAll({ userId, isActive });
   }
 
   @Get(':id')
-  findOne(@Param('id', ParseIntPipe) id: number) {
+  findOne(@Param('id') id: string) {
     return this.doctorService.findOne(id);
   }
 
   @Patch(':id')
-  update(@Param('id', ParseIntPipe) id: number, @Body() dto: UpdateDoctorDto) {
+  update(@Param('id') id: string, @Body() dto: UpdateDoctorDto) {
     return this.doctorService.update(id, dto);
   }
 
   @Delete(':id')
-  remove(@Param('id', ParseIntPipe) id: number) {
+  remove(@Param('id') id: string) {
     return this.doctorService.remove(id);
   }
 }

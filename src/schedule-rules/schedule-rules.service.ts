@@ -1,133 +1,103 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateScheduleRuleDto } from './dto/create-schedule-rule.dto';
-
-type Day = 'MON' | 'TUE' | 'WED' | 'THU' | 'FRI' | 'SAT' | 'SUN';
-type MeetingType = 'ONLINE' | 'OFFLINE';
-type TimeOfDay = 'MORNING' | 'EVENING';
+import { UpdateScheduleRuleDto } from './dto/update-schedule-rule.dto';
 
 @Injectable()
 export class ScheduleRulesService {
   constructor(private readonly prisma: PrismaService) {}
 
-  /**
-   * TS NOTE:
-   * If Prisma Client types are not refreshed yet, TS will say:
-   * "Property 'doctorScheduleRule' does not exist on type PrismaService"
-   * Using `as any` removes the TS error immediately.
-   *
-   * Still make sure you run:
-   *   npx prisma generate
-   * and restart TS server.
-   */
-  private get db() {
-    return this.prisma as any;
-  }
-
-  private validateWindow(start: number, end: number) {
-    if (end <= start) throw new BadRequestException('endMinute must be greater than startMinute');
-    if (start < 0 || end > 1440) throw new BadRequestException('Minutes must be between 0 and 1440');
+  private toInt(value: unknown, field: string): number {
+    const n = typeof value === 'number' ? value : Number(value);
+    if (!Number.isInteger(n) || n <= 0) {
+      throw new BadRequestException(`${field} must be a positive integer`);
+    }
+    return n;
   }
 
   async create(dto: CreateScheduleRuleDto) {
-    this.validateWindow(dto.startMinute, dto.endMinute);
+    const doctorId = this.toInt(dto.doctorId, 'doctorId');
 
-    // Int schema: doctorId/clinicId are numbers
-    const doctorId = Number(dto.doctorId);
-    if (Number.isNaN(doctorId)) throw new BadRequestException('doctorId must be a number');
-
-    const clinicId = dto.clinicId !== undefined && dto.clinicId !== null ? Number(dto.clinicId) : null;
-    if (dto.meetingType === 'OFFLINE' && !clinicId) {
-      throw new BadRequestException('clinicId is required for OFFLINE schedule rule');
-    }
-
-    return this.db.doctorScheduleRule.create({
+    return this.prisma.doctorScheduleRule.create({
       data: {
         doctorId,
-        clinicId,
-        meetingType: dto.meetingType,
+        clinicId: dto.clinicId == null ? null : this.toInt(dto.clinicId, 'clinicId'),
         dayOfWeek: dto.dayOfWeek,
+        meetingType: dto.meetingType,
         timeOfDay: dto.timeOfDay,
         startMinute: dto.startMinute,
         endMinute: dto.endMinute,
-        slotDurationMin: dto.slotDurationMin ?? 15,
-        capacityPerSlot: dto.capacityPerSlot ?? 1,
+        slotDurationMin: dto.slotDurationMin,
+        capacityPerSlot: dto.capacityPerSlot,
         isActive: dto.isActive ?? true,
       },
     });
   }
 
-  async findAll(doctorId?: string) {
-    const where = doctorId ? { doctorId: Number(doctorId) } : undefined;
-    if (doctorId && Number.isNaN(where.doctorId)) {
-      throw new BadRequestException('doctorId must be a number');
+  async findAll(query?: { doctorId?: string }) {
+    // ✅ ALWAYS initialize where
+    const where: { doctorId?: number } = {};
+
+    if (query?.doctorId) {
+      const parsedDoctorId = Number(query.doctorId);
+      if (Number.isNaN(parsedDoctorId)) {
+        throw new BadRequestException('doctorId must be a number');
+      }
+      where.doctorId = parsedDoctorId;
     }
 
-    return this.db.doctorScheduleRule.findMany({
+    return this.prisma.doctorScheduleRule.findMany({
       where,
-      orderBy: [{ doctorId: 'asc' }, { dayOfWeek: 'asc' }, { startMinute: 'asc' }],
+      orderBy: { id: 'asc' },
     });
   }
 
-  /**
-   * Bulk defaults:
-   * Mon–Fri: Morning 10–13, Evening 18–22
-   * Sat: Morning 9–11:30
-   * For BOTH meeting types ONLINE and OFFLINE
-   */
-  async bulkCreateDefaults(doctorIdRaw: string | number, clinicIdRaw?: string | number) {
-    const doctorId = Number(doctorIdRaw);
-    if (Number.isNaN(doctorId)) throw new BadRequestException('doctorId must be a number');
+  async findOne(id: string) {
+    const ruleId = this.toInt(id, 'id');
 
-    const clinicId = clinicIdRaw !== undefined ? Number(clinicIdRaw) : undefined;
-    if (clinicIdRaw !== undefined && Number.isNaN(clinicId)) {
-      throw new BadRequestException('clinicId must be a number');
-    }
-
-    const weekdays: Day[] = ['MON', 'TUE', 'WED', 'THU', 'FRI'];
-    const meetingTypes: MeetingType[] = ['ONLINE', 'OFFLINE'];
-
-    const templates: Array<{
-      dayOfWeek: Day;
-      timeOfDay: TimeOfDay;
-      startMinute: number;
-      endMinute: number;
-    }> = [
-      ...weekdays.map((d) => ({ dayOfWeek: d, timeOfDay: 'MORNING' as const, startMinute: 600, endMinute: 780 })), // 10:00-13:00
-      ...weekdays.map((d) => ({ dayOfWeek: d, timeOfDay: 'EVENING' as const, startMinute: 1080, endMinute: 1320 })), // 18:00-22:00
-      { dayOfWeek: 'SAT', timeOfDay: 'MORNING', startMinute: 540, endMinute: 690 }, // 09:00-11:30
-    ];
-
-    const data: any[] = [];
-
-    for (const t of templates) {
-      for (const mt of meetingTypes) {
-        if (mt === 'OFFLINE' && !clinicId) continue;
-
-        data.push({
-          doctorId,
-          clinicId: mt === 'OFFLINE' ? clinicId : null,
-          meetingType: mt,
-          dayOfWeek: t.dayOfWeek,
-          timeOfDay: t.timeOfDay,
-          startMinute: t.startMinute,
-          endMinute: t.endMinute,
-          slotDurationMin: 15,
-          capacityPerSlot: 1,
-          isActive: true,
-        });
-      }
-    }
-
-    if (data.length === 0) {
-      throw new BadRequestException('No rules generated. Provide clinicId to generate OFFLINE rules.');
-    }
-
-    const result = await this.db.doctorScheduleRule.createMany({
-      data,
-      skipDuplicates: true,
+    const rule = await this.prisma.doctorScheduleRule.findUnique({
+      where: { id: ruleId },
     });
 
-    return { created: result.count };
+    if (!rule) throw new NotFoundException('Schedule rule not found');
+    return rule;
+  }
+
+  async update(id: string, dto: UpdateScheduleRuleDto) {
+    const ruleId = this.toInt(id, 'id');
+    await this.findOne(String(ruleId));
+
+    const data: any = {
+      dayOfWeek: dto.dayOfWeek,
+      meetingType: dto.meetingType,
+      timeOfDay: dto.timeOfDay,
+      startMinute: dto.startMinute,
+      endMinute: dto.endMinute,
+      slotDurationMin: dto.slotDurationMin,
+      capacityPerSlot: dto.capacityPerSlot,
+      isActive: dto.isActive,
+    };
+
+    if (dto.clinicId !== undefined) {
+      data.clinicId = dto.clinicId === null ? null : this.toInt(dto.clinicId, 'clinicId');
+    }
+
+    if (dto.doctorId !== undefined) {
+      data.doctorId = this.toInt(dto.doctorId, 'doctorId');
+    }
+
+    return this.prisma.doctorScheduleRule.update({
+      where: { id: ruleId },
+      data,
+    });
+  }
+
+  async remove(id: string) {
+    const ruleId = this.toInt(id, 'id');
+    await this.findOne(String(ruleId));
+
+    return this.prisma.doctorScheduleRule.delete({
+      where: { id: ruleId },
+    });
   }
 }
