@@ -5,7 +5,7 @@ import { UpdateScheduleRuleDto } from './dto/update-schedule-rule.dto';
 
 @Injectable()
 export class ScheduleRulesService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService) { }
 
   private toInt(value: unknown, field: string): number {
     const n = typeof value === 'number' ? value : Number(value);
@@ -52,8 +52,8 @@ export class ScheduleRulesService {
     });
   }
 
-  async findOne(id: string) {
-    const ruleId = this.toInt(id, 'id');
+  async findOne(id: number) {
+    const ruleId = id;
 
     const rule = await this.prisma.doctorScheduleRule.findUnique({
       where: { id: ruleId },
@@ -63,9 +63,9 @@ export class ScheduleRulesService {
     return rule;
   }
 
-  async update(id: string, dto: UpdateScheduleRuleDto) {
-    const ruleId = this.toInt(id, 'id');
-    await this.findOne(String(ruleId));
+  async update(id: number, dto: UpdateScheduleRuleDto) {
+    const ruleId = id;
+    await this.findOne(ruleId);
 
     const data: any = {
       dayOfWeek: dto.dayOfWeek,
@@ -92,9 +92,9 @@ export class ScheduleRulesService {
     });
   }
 
-  async remove(id: string) {
-    const ruleId = this.toInt(id, 'id');
-    await this.findOne(String(ruleId));
+  async remove(id: number) {
+    const ruleId = id;
+    await this.findOne(ruleId);
 
     return this.prisma.doctorScheduleRule.delete({
       where: { id: ruleId },
