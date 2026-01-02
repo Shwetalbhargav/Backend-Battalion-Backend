@@ -7,79 +7,76 @@ import { UpdatePatientDto } from './dto/update-patient.dto';
 export class PatientService {
   constructor(private readonly prisma: PrismaService) {}
 
-  private toInt(value: unknown, fieldName: string): number {
-    const n = typeof value === 'number' ? value : Number(value);
-    if (!Number.isInteger(n) || n <= 0) {
-      throw new BadRequestException(`${fieldName} must be a positive integer`);
-    }
-    return n;
-  }
-
   async create(dto: CreatePatientDto) {
-    const userId = this.toInt(dto.userId, 'userId');
+    if (dto.userId === undefined || dto.userId === null) {
+      throw new BadRequestException('userId is required');
+    }
 
     const existing = await this.prisma.patient.findUnique({
-      where: { userId },
+      where: { userId: dto.userId },
     });
-    if (existing) throw new BadRequestException('Patient profile already exists for this user');
+    if (existing) {
+      throw new BadRequestException('Patient profile already exists for this userId');
+    }
 
     return this.prisma.patient.create({
       data: {
-        userId,
-        gender: dto.gender,
-        dob: dto.dob ? new Date(dto.dob) : undefined,
-        bloodGroup: dto.bloodGroup,
-        phone: dto.phone,
+        userId: dto.userId,
+        gender: (dto as any).gender ?? null,
+        dob: (dto as any).dob ?? null,
+        bloodGroup: (dto as any).bloodGroup ?? null,
+        phone: (dto as any).phone ?? null,
       },
-      include: { user: true },
     });
   }
 
   findAll() {
-    return this.prisma.patient.findMany({ include: { user: true } });
+    return this.prisma.patient.findMany({
+      include: { user: true },
+      orderBy: { id: 'asc' },
+    });
   }
 
-  async findOne(id: string) {
-    const patientId = this.toInt(id, 'id');
-
-    const patient = await this.prisma.patient.findUnique({
-      where: { id: patientId },
+  async findOne(id: number) {
+    const p = await this.prisma.patient.findUnique({
+      where: { id },
       include: { user: true },
     });
-
-    if (!patient) throw new NotFoundException('Patient not found');
-    return patient;
+    if (!p) throw new NotFoundException('Patient not found');
+    return p;
   }
 
-  async update(id: string, dto: UpdatePatientDto) {
-    const patientId = this.toInt(id, 'id');
-    await this.findOne(String(patientId));
-
-    const data: any = {
-      gender: dto.gender,
-      dob: dto.dob ? new Date(dto.dob) : undefined,
-      bloodGroup: dto.bloodGroup,
-      phone: dto.phone,
-    };
-
-    // IMPORTANT: only set userId if provided
-    if (dto.userId !== undefined) {
-      data.userId = this.toInt(dto.userId, 'userId');
-    }
-
+  async update(id: number, dto: UpdatePatientDto) {
+    await this.findOne(id);
     return this.prisma.patient.update({
-      where: { id: patientId },
-      data,
-      include: { user: true },
+      where: { id },
+      data: {
+        gender: (dto as any).gender ?? undefined,
+        dob: (dto as any).dob ?? undefined,
+        bloodGroup: (dto as any).bloodGroup ?? undefined,
+        phone: (dto as any).phone ?? undefined,
+      },
     });
   }
 
-  async remove(id: string) {
-    const patientId = this.toInt(id, 'id');
-    await this.findOne(String(patientId));
+  async remove(id: number) {
+    await this.findOne(id);
+    return this.prisma.patient.delete({ where: { id } });
+  }
 
-    return this.prisma.patient.delete({
-      where: { id: patientId },
+  // ✅ FIX: userId is Int => number
+  async ensurePatientProfile(userId: number) {
+    const existing = await this.prisma.patient.findUnique({ where: { userId } });
+    if (existing) return existing;
+
+    return this.prisma.patient.create({
+      data: {
+        userId,
+        gender: null,
+        dob: null,
+        bloodGroup: null,
+        phone: null,
+      },
     });
   }
 }

@@ -1,37 +1,47 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common';
+import { Controller, Get, Post, Body, Patch, Param, Delete, Req } from '@nestjs/common';
 import { DoctorService } from './doctor.service';
 import { CreateDoctorDto } from './dto/create-doctor.dto';
 import { UpdateDoctorDto } from './dto/update-doctor.dto';
+import { DoctorOnly } from '../auth/guards/doctor-only.guard';
+import { ParseIntPipe } from '@nestjs/common';
 
-@Controller('api/v1/doctors')
+
+@Controller('doctor')
 export class DoctorController {
   constructor(private readonly doctorService: DoctorService) {}
 
+  // ✅ Only DOCTOR users can create doctor profile
+  // ✅ userId comes from JWT (Google OAuth login)
   @Post()
-  create(@Body() dto: CreateDoctorDto) {
-    return this.doctorService.create(dto);
+  @DoctorOnly()
+  create(@Req() req: any, @Body() dto: CreateDoctorDto) {
+    return this.doctorService.create({
+      ...dto,
+      userId: req.user.id, // <- from token
+    });
   }
 
-  // Optional filters:
-  // /api/v1/doctors?userId=1
-  // /api/v1/doctors?isActive=true
+  // Up to you: make public OR require auth
   @Get()
-  findAll(@Query('userId') userId?: string, @Query('isActive') isActive?: string) {
-    return this.doctorService.findAll({ userId, isActive });
+  findAll() {
+    return this.doctorService.findAll();
   }
 
+  // optional: protect
   @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.doctorService.findOne(id);
+  findOne(@Param('id', ParseIntPipe) id: number) {
+  return this.doctorService.findOne(id);
   }
 
+
+  // optional: doctor-only (recommended if doctor edits own profile)
   @Patch(':id')
-  update(@Param('id') id: string, @Body() dto: UpdateDoctorDto) {
-    return this.doctorService.update(id, dto);
-  }
+    update(@Param('id', ParseIntPipe) id: number, @Body() dto: UpdateDoctorDto) {
+      return this.doctorService.update(id, dto);
+    }
 
   @Delete(':id')
-  remove(@Param('id') id: string) {
-    return this.doctorService.remove(id);
-  }
+    remove(@Param('id', ParseIntPipe) id: number) {
+      return this.doctorService.remove(id);
+    }
 }

@@ -1,24 +1,45 @@
-import { Controller, Delete, Get, Param } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post } from '@nestjs/common';
 import { UsersService } from './users.service';
+import { CreateUserDto } from './dto/create-user.dto';
+import { UpdateUserDto } from './dto/update-user.dto';
+import { UseGuards, Req } from '@nestjs/common';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { ParseIntPipe } from '@nestjs/common';
 
-@Controller('api/v1/users')
+@Controller('users')
 export class UsersController {
-  constructor(private readonly usersService: UsersService) {}
+  constructor(private readonly users: UsersService) {}
+
+  @Post()
+  create(@Body() dto: CreateUserDto) {
+    return this.users.create(dto);
+  }
 
   @Get()
   findAll() {
-    return this.usersService.findAll();
+    return this.users.findAll();
+  }
+  
+  @Get('me')
+  @UseGuards(JwtAuthGuard)
+   me(@Req() req: any) {
+  return this.users.findOne(req.user.id);
+   }
+  @Get(':id')
+  findOne(@Param('id', ParseIntPipe) id: number) {
+    return this.users.findOne(id);
   }
 
-  @Get(':id')
-  findOne(@Param('id') id: string) {
-    // id is string at controller level
-    // service safely converts + validates
-    return this.usersService.findOne(id);
+  @Patch(':id')
+  update(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: UpdateUserDto,
+  ) {
+    return this.users.update(id, dto);
   }
 
   @Delete(':id')
-  remove(@Param('id') id: string) {
-    return this.usersService.remove(id);
+  remove(@Param('id', ParseIntPipe) id: number) {
+    return this.users.remove(id);
   }
 }

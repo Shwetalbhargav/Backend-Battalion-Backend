@@ -7,94 +7,76 @@ import { UpdateDoctorDto } from './dto/update-doctor.dto';
 export class DoctorService {
   constructor(private readonly prisma: PrismaService) {}
 
-  private toInt(value: unknown, field: string): number {
-    const n = typeof value === 'number' ? value : Number(value);
-    if (!Number.isInteger(n) || n <= 0) {
-      throw new BadRequestException(`${field} must be a positive integer`);
-    }
-    return n;
-  }
-
   async create(dto: CreateDoctorDto) {
-    const userId = this.toInt((dto as any).userId, 'userId');
+    if (dto.userId === undefined || dto.userId === null) {
+      throw new BadRequestException('userId is required');
+    }
 
-    // prevent duplicate profile for same user
     const existing = await this.prisma.doctor.findUnique({
-      where: { userId },
+      where: { userId: dto.userId },
     });
     if (existing) {
-      throw new BadRequestException('Doctor profile already exists for this user');
+      throw new BadRequestException('Doctor profile already exists for this userId');
     }
 
     return this.prisma.doctor.create({
       data: {
-        userId,
-        bio: (dto as any).bio ?? undefined,
+        userId: dto.userId,
+        specialization: (dto as any).specialization ?? null,
+        experienceYears: (dto as any).experienceYears ?? null,
+        bio: (dto as any).bio ?? null,
         isActive: (dto as any).isActive ?? true,
       },
-      include: { user: true },
     });
   }
 
-  findAll(query?: { userId?: string; isActive?: string }) {
-    const where: any = {};
-
-    if (query?.userId) {
-      where.userId = this.toInt(query.userId, 'userId');
-    }
-
-    if (query?.isActive !== undefined) {
-      if (query.isActive === 'true') where.isActive = true;
-      else if (query.isActive === 'false') where.isActive = false;
-      else throw new BadRequestException('isActive must be "true" or "false"');
-    }
-
+  findAll() {
     return this.prisma.doctor.findMany({
-      where,
       include: { user: true },
       orderBy: { id: 'asc' },
     });
   }
 
-  async findOne(id: string) {
-    const doctorId = this.toInt(id, 'id');
-
-    const doctor = await this.prisma.doctor.findUnique({
-      where: { id: doctorId },
+  async findOne(id: number) {
+    const doc = await this.prisma.doctor.findUnique({
+      where: { id },
       include: { user: true },
     });
-
-    if (!doctor) throw new NotFoundException('Doctor not found');
-    return doctor;
+    if (!doc) throw new NotFoundException('Doctor not found');
+    return doc;
   }
 
-  async update(id: string, dto: UpdateDoctorDto) {
-    const doctorId = this.toInt(id, 'id');
-    await this.findOne(String(doctorId));
-
-    const data: any = {
-      bio: (dto as any).bio ?? undefined,
-      isActive: (dto as any).isActive ?? undefined,
-    };
-
-    if ((dto as any).userId !== undefined) {
-      data.userId = this.toInt((dto as any).userId, 'userId');
-    }
-
+  async update(id: number, dto: UpdateDoctorDto) {
+    await this.findOne(id);
     return this.prisma.doctor.update({
-      where: { id: doctorId },
-      data,
-      include: { user: true },
+      where: { id },
+      data: {
+        specialization: (dto as any).specialization ?? undefined,
+        experienceYears: (dto as any).experienceYears ?? undefined,
+        bio: (dto as any).bio ?? undefined,
+        isActive: (dto as any).isActive ?? undefined,
+      },
     });
   }
 
-  async remove(id: string) {
-    const doctorId = this.toInt(id, 'id');
-    await this.findOne(String(doctorId));
+  async remove(id: number) {
+    await this.findOne(id);
+    return this.prisma.doctor.delete({ where: { id } });
+  }
 
-    return this.prisma.doctor.delete({
-      where: { id: doctorId },
-      include: { user: true },
+  // ✅ FIX: userId is Int => number
+  async ensureDoctorProfile(userId: number) {
+    const existing = await this.prisma.doctor.findUnique({ where: { userId } });
+    if (existing) return existing;
+
+    return this.prisma.doctor.create({
+      data: {
+        userId,
+        specialization: null,
+        experienceYears: null,
+        bio: null,
+        isActive: true,
+      },
     });
   }
 }
