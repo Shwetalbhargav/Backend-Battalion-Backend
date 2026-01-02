@@ -2,6 +2,13 @@
 import { Module, Controller, Get } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 
+
+
+import { AuthModule } from './auth/auth.module';
+import { DoctorModule } from './doctor/doctor.module';
+import { PatientModule } from './patient/patient.module';
+import { UsersModule } from './users/users.module';
+
 import { PrismaModule } from './prisma/prisma.module';
 import { PrismaService } from './prisma/prisma.service';
 
@@ -32,8 +39,19 @@ class HealthController {
     UsersModule,
     DoctorModule,
     PatientModule,
+
+    UsersModule,
+
+
     ScheduleRulesModule,
     AvailabilitySlotsModule,
+
+    AuthModule,
+
+intern/shwetal-main
+    ScheduleRulesModule,
+    AvailabilitySlotsModule,
+ intern/shwetal-main
   ],
   controllers: [HealthController],
 })

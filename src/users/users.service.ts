@@ -19,6 +19,10 @@ export class UsersService {
         // If your schema has these, keep them; otherwise remove:
         provider: dto.provider ?? null,
         providerId: dto.providerId ?? null,
+        name: dto.name,
+        role: dto.role,
+        provider: dto.provider,
+        providerId: dto.providerId,
       },
     });
   }
