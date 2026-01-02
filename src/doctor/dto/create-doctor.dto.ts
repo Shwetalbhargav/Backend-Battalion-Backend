@@ -8,15 +8,6 @@ export class CreateDoctorDto {
 
   @IsOptional()
   @IsString()
-  specialization?: string;
-
-  @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  experienceYears?: number;
-
-  @IsOptional()
-  @IsString()
   bio?: string;
 
   @IsOptional()
