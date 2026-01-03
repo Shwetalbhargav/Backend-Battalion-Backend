@@ -18,11 +18,7 @@ export class UsersService {
         role: dto.role,
         provider: dto.provider,
         providerId: dto.providerId,
-        name: dto.name ?? null,
-        role: dto.role ?? Role.PATIENT,
-        // If your schema has these, keep them; otherwise remove:
-        provider: dto.provider ?? null,
-        providerId: dto.providerId ?? null,
+        
       },
     });
   }

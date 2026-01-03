@@ -11,14 +11,11 @@ import { UpsertSessionOverrideDto } from './dto/upsert-session-override.dto';
 // import { AvailabilitySlotsService } from '../availability-slots/availability-slots.service';
 
 @Injectable()
-export class ScheduleRulesService {<<<<<<< feature/availability-slot-generation
+export class ScheduleRulesService {
   constructor(
     private readonly prisma: PrismaService,
     // private readonly availabilitySlotsService: AvailabilitySlotsService,
-  ) {}
-
-  constructor(private readonly prisma: PrismaService) { }
- intern/shwetal-main
+  ) { }
 
   private toInt(value: unknown, field: string): number {
     const n = typeof value === 'number' ? value : Number(value);
@@ -91,16 +88,14 @@ export class ScheduleRulesService {<<<<<<< feature/availability-slot-generation
   }
 
 
-  async remove(id: string) {
-    const ruleId = this.toInt(id, 'id');
-    await this.findOne(String(ruleId));
-    return this.prisma.doctorScheduleRule.delete({ where: { id: ruleId } });
-  }
+ async remove(id: number) {
+  const ruleId = id;
+  await this.findOne(ruleId);
 
-  async remove(id: number) {
-    const ruleId = id;
-    await this.findOne(ruleId);
-
+  return this.prisma.doctorScheduleRule.delete({
+    where: { id: ruleId },
+  });
+}
 
   /**
    * NEW: bulk generate sessions/slots between dateFrom and dateTo.
