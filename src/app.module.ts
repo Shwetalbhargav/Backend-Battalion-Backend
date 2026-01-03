@@ -1,7 +1,7 @@
 // src/app.module.ts
+
 import { Module, Controller, Get } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
-
 import { PrismaModule } from './prisma/prisma.module';
 import { PrismaService } from './prisma/prisma.service';
 import { AuthModule } from './auth/auth.module';
@@ -23,6 +23,8 @@ import { AvailabilitySlotsModule } from './availability-slots/availability-slots
     ScheduleRulesModule,
     AvailabilitySlotsModule,
     AuthModule,
+    ScheduleRulesModule,
+    AvailabilitySlotsModule,
     ScheduleRulesModule,
     AvailabilitySlotsModule,
 
