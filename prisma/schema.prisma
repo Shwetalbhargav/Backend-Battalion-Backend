@@ -78,9 +78,11 @@ model Doctor {
   scheduleRules DoctorScheduleRule[]
   slots         AvailabilitySlot[]
 
-  createdAt            DateTime              @default(now())
-  updatedAt            DateTime              @updatedAt
-  availabilitySessions AvailabilitySession[]
+  createdAt              DateTime                @default(now())
+  updatedAt              DateTime                @updatedAt
+  availabilitySessions   AvailabilitySession[]
+  doctorDayOverrides     DoctorDayOverride[]
+  doctorSessionOverrides DoctorSessionOverride[]
 }
 
 model Patient {
@@ -150,9 +152,10 @@ model Clinic {
   rules DoctorScheduleRule[]
   slots AvailabilitySlot[]
 
-  createdAt            DateTime              @default(now())
-  updatedAt            DateTime              @updatedAt
-  availabilitySessions AvailabilitySession[]
+  createdAt              DateTime                @default(now())
+  updatedAt              DateTime                @updatedAt
+  availabilitySessions   AvailabilitySession[]
+  doctorSessionOverrides DoctorSessionOverride[]
 }
 
 /**
@@ -238,6 +241,52 @@ model AvailabilitySession {
   doctor            Doctor             @relation(fields: [doctorId], references: [id], onDelete: Cascade)
   clinic            Clinic?            @relation(fields: [clinicId], references: [id])
   availabilitySlots AvailabilitySlot[]
+
+  @@unique([doctorId, date, meetingType, timeOfDay, locationKey])
+  @@index([doctorId, date, timeOfDay])
+}
+
+model DoctorDayOverride {
+  id       Int      @id @default(autoincrement())
+  doctorId Int
+  date     DateTime // store the day (recommend normalize to start-of-day)
+  isClosed Boolean  @default(false)
+  note     String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  doctor Doctor @relation(fields: [doctorId], references: [id], onDelete: Cascade)
+
+  @@unique([doctorId, date])
+  @@index([doctorId, date])
+}
+
+model DoctorSessionOverride {
+  id          Int         @id @default(autoincrement())
+  doctorId    Int
+  clinicId    Int?
+  date        DateTime
+  meetingType MeetingType
+  timeOfDay   TimeOfDay
+  locationKey String      @default("NONE")
+
+  // if closed => remove/disable that date+session
+  isClosed Boolean @default(false)
+
+  // optional overrides (if null, fall back to rule values)
+  startMinute     Int?
+  endMinute       Int?
+  slotDurationMin Int?
+  capacityPerSlot Int?
+
+  note String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  doctor Doctor  @relation(fields: [doctorId], references: [id], onDelete: Cascade)
+  clinic Clinic? @relation(fields: [clinicId], references: [id])
 
   @@unique([doctorId, date, meetingType, timeOfDay, locationKey])
   @@index([doctorId, date, timeOfDay])
