@@ -6,7 +6,7 @@ import { PrismaModule } from './prisma/prisma.module';
 import { PrismaService } from './prisma/prisma.service';
 import { AuthModule } from './auth/auth.module';
 import { UsersModule } from './users/users.module';
-import { AuthModule } from './auth/auth.module';
+
 import { DoctorModule } from './doctor/doctor.module';
 import { PatientModule } from './patient/patient.module';
 import { ScheduleRulesModule } from './schedule-rules/schedule-rules.module';
@@ -25,7 +25,7 @@ import { AvailabilitySlotsModule } from './availability-slots/availability-slots
     AuthModule,
     ScheduleRulesModule,
     AvailabilitySlotsModule,
- intern/shwetal-main
+
   ],
 })
 export class AppModule {}
