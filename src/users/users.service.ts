@@ -14,13 +14,8 @@ export class UsersService {
     return this.prisma.user.create({
       data: {
         email: dto.email,
-        name: dto.name,
-        role: dto.role,
-        provider: dto.provider,
-        providerId: dto.providerId,
         name: dto.name ?? null,
         role: dto.role ?? Role.PATIENT,
-        // If your schema has these, keep them; otherwise remove:
         provider: dto.provider ?? null,
         providerId: dto.providerId ?? null,
       },
@@ -29,9 +24,7 @@ export class UsersService {
 
   // ---------- READ ----------
   async findAll() {
-    return this.prisma.user.findMany({
-      orderBy: { id: 'desc' },
-    });
+    return this.prisma.user.findMany({ orderBy: { id: 'desc' } });
   }
 
   async findOne(id: number) {
@@ -50,7 +43,6 @@ export class UsersService {
 
   // ---------- UPDATE ----------
   async update(id: number, dto: UpdateUserDto) {
-    // optional existence check
     await this.findOne(id);
 
     return this.prisma.user.update({
@@ -70,10 +62,7 @@ export class UsersService {
     });
   }
 
-  // ✅ OAuth helper (used by AuthService)
-  // Policy:
-  // - If user exists: update provider/providerId and (optionally) role
-  // - If user doesn't exist: create with role and provider fields
+  // ---------- OAUTH HELPER ----------
   async findOrCreateGoogleUser(input: {
     email: string;
     name: string;
@@ -82,20 +71,14 @@ export class UsersService {
   }) {
     const { email, name, providerId, role } = input;
 
-    // 1) Try by provider first (most precise)
     const byProvider = await this.findByProvider('google', providerId);
     if (byProvider) {
       return this.prisma.user.update({
         where: { id: byProvider.id },
-        data: {
-          email,
-          name: name ?? null,
-          role, // if you DON'T want role to change on every login, set: role: byProvider.role
-        },
+        data: { email, name: name ?? null, role },
       });
     }
 
-    // 2) Try by email (common for first-time link)
     const byEmail = await this.findByEmail(email);
     if (byEmail) {
       return this.prisma.user.update({
@@ -104,12 +87,11 @@ export class UsersService {
           name: name ?? byEmail.name ?? null,
           provider: 'google',
           providerId,
-          role, // or keep existing: role: byEmail.role
+          role,
         },
       });
     }
 
-    // 3) Create new user
     return this.prisma.user.create({
       data: {
         email,
@@ -121,7 +103,6 @@ export class UsersService {
     });
   }
 
-  // ✅ FIX: userId is Int in Prisma => number in TS
   async linkGoogle(userId: number, providerId: string) {
     return this.prisma.user.update({
       where: { id: userId },
@@ -131,9 +112,7 @@ export class UsersService {
 
   // ---------- DELETE ----------
   async remove(id: number) {
-    // optional existence check
     await this.findOne(id);
-
     return this.prisma.user.delete({ where: { id } });
   }
 }
