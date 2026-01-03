@@ -11,7 +11,7 @@ import { UpsertSessionOverrideDto } from './dto/upsert-session-override.dto';
 // import { AvailabilitySlotsService } from '../availability-slots/availability-slots.service';
 
 @Injectable()
-export class ScheduleRulesService {<<<<<<< feature/availability-slot-generation
+export class ScheduleRulesService {
   constructor(
     private readonly prisma: PrismaService,
     // private readonly availabilitySlotsService: AvailabilitySlotsService,
