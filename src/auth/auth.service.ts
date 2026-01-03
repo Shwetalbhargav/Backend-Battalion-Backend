@@ -1,21 +1,39 @@
 
 
 // src/auth/auth.service.ts
-import { Injectable } from '@nestjs/common';
+import { Injectable, BadRequestException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
-import { Role } from '@prisma/client';
-import { UsersService } from '../users/users.service';
+import { Role, User } from '@prisma/client';
+
+import { PrismaService } from '../prisma/prisma.service';
 import { DoctorService } from '../doctor/doctor.service';
 import { PatientService } from '../patient/patient.service';
 
 @Injectable()
 export class AuthService {
   constructor(
+    private readonly prisma: PrismaService,
     private readonly jwt: JwtService,
-    private readonly users: UsersService,
     private readonly doctors: DoctorService,
     private readonly patients: PatientService,
   ) {}
+
+  async googleLogin(user: User, role?: string) {
+  // role should already be on user (set in GoogleStrategy),
+  // but keep this as a fallback
+  const effectiveRole =
+    user.role ??
+    (role?.toString().toUpperCase() === 'DOCTOR' ? Role.DOCTOR : Role.PATIENT);
+
+  const token = await this.signJwt({
+    id: user.id,
+    role: effectiveRole,
+    email: user.email,
+  });
+
+  return { token, user: { ...user, role: effectiveRole } };
+}
+
 
   async findOrCreateGoogleUser(payload: {
     email: string;
@@ -59,12 +77,46 @@ export class AuthService {
   async findOrCreateGoogleUser(input: {
     email: string;
     name: string;
+    provider: 'google';
     providerId: string;
     role: Role;
-  }) {
-    const user = await this.users.findOrCreateGoogleUser(input);
+  }): Promise<User> {
+    const { email, name, provider, providerId, role } = input;
 
-    // ✅ create doctor/patient profile row if missing
+    if (!email || !providerId) {
+      throw new BadRequestException('Invalid Google profile data');
+    }
+
+    // Try to locate user either by provider+id OR by email
+    const existing = await this.prisma.user.findFirst({
+      where: {
+        OR: [{ provider, providerId }, { email }],
+      },
+    });
+
+    const user = existing
+      ? await this.prisma.user.update({
+          where: { id: existing.id },
+          data: {
+            email,
+            name,
+            provider,
+            providerId,
+            // keep existing role if already set
+            role: existing.role ?? role,
+          },
+        })
+      : await this.prisma.user.create({
+          data: {
+            email,
+            name,
+            provider,
+            providerId,
+            role,
+          },
+        });
+
+    // Ensure role profile exists
     if (user.role === Role.DOCTOR) {
       await this.doctors.ensureDoctorProfile(user.id);
     } else {
