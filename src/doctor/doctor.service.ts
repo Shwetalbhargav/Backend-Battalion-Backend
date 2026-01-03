@@ -45,6 +45,8 @@ export class DoctorService {
     return doc;
   }
 
+  
+
   async update(id: number, dto: UpdateDoctorDto) {
   await this.findOne(id);
 
@@ -53,9 +55,37 @@ export class DoctorService {
     data: {
       bio: (dto as any).bio ?? undefined,
       isActive: (dto as any).isActive ?? undefined,
+
+      // Replace ALL specialties if specialtyIds is provided
+      specialties: (dto as any).specialtyIds
+        ? {
+            deleteMany: {}, // deletes existing DoctorSpecialty rows for this doctor
+            create: (dto as any).specialtyIds.map((specialtyId: number) => ({
+              specialtyId,
+            })),
+          }
+        : undefined,
+
+      // Replace ALL services if serviceIds is provided
+      services: (dto as any).serviceIds
+        ? {
+            deleteMany: {},
+            create: (dto as any).serviceIds.map((serviceId: number) => ({
+              serviceId,
+            })),
+          }
+        : undefined,
+    },
+    include: {
+      user: true,
+      specialties: true,
+      services: true,
     },
   });
 }
+  
+  
+
 
 
   async remove(id: number) {
