@@ -71,7 +71,7 @@ export class UsersService {
     role: Role;
   }) {
     const { email, name, providerId, role } = input;
-
+    const safeName = name ?? 'Unknown';
     const byProvider = await this.findByProvider('google', providerId);
     if (byProvider) {
       return this.prisma.user.update({

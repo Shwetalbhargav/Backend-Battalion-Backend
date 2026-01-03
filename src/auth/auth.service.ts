@@ -38,7 +38,7 @@ export class AuthService {
 
     const user = await this.users.findOrCreateGoogleUser({
       email: userFromStrategy.email,
-      name: userFromStrategy.name ?? null,
+      name: userFromStrategy.name ?? 'Unknown',
       providerId: userFromStrategy.providerId,
       role,
     });

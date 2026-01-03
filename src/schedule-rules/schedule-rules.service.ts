@@ -7,22 +7,9 @@ import { GenerateSlotsRangeDto } from './dto/generate-slots-range.dto';
 import { UpsertDayOverrideDto } from './dto/upsert-day-override.dto';
 import { UpsertSessionOverrideDto } from './dto/upsert-session-override.dto';
 
-// If you already have AvailabilitySlotsService, inject it and call it here.
-// import { AvailabilitySlotsService } from '../availability-slots/availability-slots.service';
-
-import { GenerateSlotsRangeDto } from "./dto/generate-slots-range.dto";
-import { UpsertDayOverrideDto } from './dto/upsert-day-override.dto';
-import { UpsertSessionOverrideDto } from './dto/upsert-session-override.dto';
-
-// If you already have AvailabilitySlotsService, inject it and call it here.
-// import { AvailabilitySlotsService } from '../availability-slots/availability-slots.service';
-
 @Injectable()
 export class ScheduleRulesService {
-  constructor(
-    private readonly prisma: PrismaService,
-    // private readonly availabilitySlotsService: AvailabilitySlotsService,
-  ) {}
+  constructor(private readonly prisma: PrismaService) {}
 
   private toInt(value: unknown, field: string): number {
     const n = typeof value === 'number' ? value : Number(value);
@@ -38,23 +25,17 @@ export class ScheduleRulesService {
     const doctor = await this.prisma.doctor.findUnique({ where: { id: doctorId } });
     if (!doctor) throw new BadRequestException(`doctorId ${doctorId} not found`);
 
-    // (Optional) validate doctor exists
-    const doctor = await this.prisma.doctor.findUnique({ where: { id: doctorId } });
-    if (!doctor) throw new BadRequestException(`doctorId ${doctorId} not found`);
-
     return this.prisma.doctorScheduleRule.create({
       data: {
         doctorId,
         clinicId: dto.clinicId ?? null,
-        clinicId: dto.clinicId ?? null,
         meetingType: dto.meetingType,
-        dayOfWeek: dto.dayOfWeek,
         dayOfWeek: dto.dayOfWeek,
         timeOfDay: dto.timeOfDay,
         startMinute: dto.startMinute,
         endMinute: dto.endMinute,
-        slotDurationMin: dto.slotDurationMin ?? 15 ?? 15,
-        capacityPerSlot: dto.capacityPerSlot ?? 1 ?? 1,
+        slotDurationMin: dto.slotDurationMin ?? 15,
+        capacityPerSlot: dto.capacityPerSlot ?? 1,
         isActive: dto.isActive ?? true,
       },
     });
@@ -73,14 +54,6 @@ export class ScheduleRulesService {
     });
   }
 
-  async findOne(id: string) {
-    const ruleId = this.toInt(id, 'id');
-
-    const rule = await this.prisma.doctorScheduleRule.findUnique({
-      where: { id: ruleId },
-    });
-
-    if (!rule) throw new NotFoundException(`Schedule rule ${ruleId} not found`);
   async findOne(id: number) {
     const rule = await this.prisma.doctorScheduleRule.findUnique({ where: { id } });
     if (!rule) throw new NotFoundException(`Schedule rule ${id} not found`);
@@ -113,7 +86,7 @@ export class ScheduleRulesService {
 
   /**
    * Bulk generate sessions/slots between dateFrom and dateTo.
-   * You can wire this to AvailabilitySlotsService.generateSlots().
+   * Wire this to AvailabilitySlotsService if/when you add it.
    */
   async generateSlots(dto: GenerateSlotsRangeDto) {
     const doctorId = this.toInt(dto.doctorId, 'doctorId');
@@ -127,9 +100,6 @@ export class ScheduleRulesService {
     if (dateTo <= dateFrom) {
       throw new BadRequestException('dateTo must be after dateFrom');
     }
-
-    // Recommended:
-    // return this.availabilitySlotsService.generateSlots(doctorId, dto.dateFrom, dto.dateTo);
 
     return {
       message: 'Hook up to AvailabilitySlotsService.generateSlots(doctorId, dateFrom, dateTo)',
@@ -153,8 +123,8 @@ export class ScheduleRulesService {
         note: dto.note ?? null,
       },
       update: {
-        isClosed: dto.isClosed ?? true,
-        note: dto.note ?? null,
+        isClosed: dto.isClosed ?? undefined,
+        note: dto.note ?? undefined,
       },
     });
   }
@@ -176,8 +146,8 @@ export class ScheduleRulesService {
       },
       create: {
         doctorId,
-        clinicId: dto.clinicId ?? null,
         date,
+        clinicId: dto.clinicId ?? null,
         meetingType: dto.meetingType,
         timeOfDay: dto.timeOfDay,
         locationKey: dto.locationKey ?? 'NONE',
