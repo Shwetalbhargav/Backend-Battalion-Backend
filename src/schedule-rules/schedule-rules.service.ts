@@ -11,11 +11,14 @@ import { UpsertSessionOverrideDto } from './dto/upsert-session-override.dto';
 // import { AvailabilitySlotsService } from '../availability-slots/availability-slots.service';
 
 @Injectable()
-export class ScheduleRulesService {
+export class ScheduleRulesService {<<<<<<< feature/availability-slot-generation
   constructor(
     private readonly prisma: PrismaService,
     // private readonly availabilitySlotsService: AvailabilitySlotsService,
   ) {}
+
+  constructor(private readonly prisma: PrismaService) { }
+ intern/shwetal-main
 
   private toInt(value: unknown, field: string): number {
     const n = typeof value === 'number' ? value : Number(value);
@@ -56,8 +59,8 @@ export class ScheduleRulesService {
     });
   }
 
-  async findOne(id: string) {
-    const ruleId = this.toInt(id, 'id');
+  async findOne(id: number) {
+    const ruleId = id;
 
     const rule = await this.prisma.doctorScheduleRule.findUnique({
       where: { id: ruleId },
@@ -67,9 +70,9 @@ export class ScheduleRulesService {
     return rule;
   }
 
-  async update(id: string, dto: UpdateScheduleRuleDto) {
-    const ruleId = this.toInt(id, 'id');
-    await this.findOne(String(ruleId));
+  async update(id: number, dto: UpdateScheduleRuleDto) {
+    const ruleId = id;
+    await this.findOne(ruleId);
 
     return this.prisma.doctorScheduleRule.update({
       where: { id: ruleId },
@@ -87,11 +90,17 @@ export class ScheduleRulesService {
     });
   }
 
+
   async remove(id: string) {
     const ruleId = this.toInt(id, 'id');
     await this.findOne(String(ruleId));
     return this.prisma.doctorScheduleRule.delete({ where: { id: ruleId } });
   }
+
+  async remove(id: number) {
+    const ruleId = id;
+    await this.findOne(ruleId);
+
 
   /**
    * NEW: bulk generate sessions/slots between dateFrom and dateTo.
