@@ -14,7 +14,7 @@ import { GenerateSlotsDto } from './dto/generate-slots.dto';
 import { UpdateSlotDto } from './dto/update-slot.dto';
 import { MeetingType, SlotStatus, TimeOfDay } from '@prisma/client';
 
-@Controller('api/v1/availability-slots')
+@Controller('availability-slots')
 export class AvailabilitySlotsController {
   constructor(private readonly availabilitySlotsService: AvailabilitySlotsService) {}
 
