@@ -1,9 +1,9 @@
+// src/schedule-rules/schedule-rules.service.ts
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateScheduleRuleDto } from './dto/create-schedule-rule.dto';
 import { UpdateScheduleRuleDto } from './dto/update-schedule-rule.dto';
-
-import { GenerateSlotsRangeDto } from "./dto/generate-slots-range.dto";
+import { GenerateSlotsRangeDto } from './dto/generate-slots-range.dto';
 import { UpsertDayOverrideDto } from './dto/upsert-day-override.dto';
 import { UpsertSessionOverrideDto } from './dto/upsert-session-override.dto';
 
@@ -15,7 +15,7 @@ export class ScheduleRulesService {
   constructor(
     private readonly prisma: PrismaService,
     // private readonly availabilitySlotsService: AvailabilitySlotsService,
-  ) { }
+  ) {}
 
   private toInt(value: unknown, field: string): number {
     const n = typeof value === 'number' ? value : Number(value);
@@ -28,7 +28,6 @@ export class ScheduleRulesService {
   async create(dto: CreateScheduleRuleDto) {
     const doctorId = this.toInt(dto.doctorId, 'doctorId');
 
-    // (Optional) validate doctor exists
     const doctor = await this.prisma.doctor.findUnique({ where: { id: doctorId } });
     if (!doctor) throw new BadRequestException(`doctorId ${doctorId} not found`);
 
@@ -52,27 +51,26 @@ export class ScheduleRulesService {
     const where = doctorId ? { doctorId: this.toInt(doctorId, 'doctorId') } : {};
     return this.prisma.doctorScheduleRule.findMany({
       where,
-      orderBy: [{ doctorId: 'asc' }, { dayOfWeek: 'asc' }, { timeOfDay: 'asc' }, { startMinute: 'asc' }],
+      orderBy: [
+        { doctorId: 'asc' },
+        { dayOfWeek: 'asc' },
+        { timeOfDay: 'asc' },
+        { startMinute: 'asc' },
+      ],
     });
   }
 
   async findOne(id: number) {
-    const ruleId = id;
-
-    const rule = await this.prisma.doctorScheduleRule.findUnique({
-      where: { id: ruleId },
-    });
-
-    if (!rule) throw new NotFoundException(`Schedule rule ${ruleId} not found`);
+    const rule = await this.prisma.doctorScheduleRule.findUnique({ where: { id } });
+    if (!rule) throw new NotFoundException(`Schedule rule ${id} not found`);
     return rule;
   }
 
   async update(id: number, dto: UpdateScheduleRuleDto) {
-    const ruleId = id;
-    await this.findOne(ruleId);
+    await this.findOne(id);
 
     return this.prisma.doctorScheduleRule.update({
-      where: { id: ruleId },
+      where: { id },
       data: {
         clinicId: dto.clinicId ?? undefined,
         meetingType: dto.meetingType ?? undefined,
@@ -87,36 +85,31 @@ export class ScheduleRulesService {
     });
   }
 
-
- async remove(id: number) {
-  const ruleId = id;
-  await this.findOne(ruleId);
-
-  return this.prisma.doctorScheduleRule.delete({
-    where: { id: ruleId },
-  });
-}
+  async remove(id: number) {
+    await this.findOne(id);
+    return this.prisma.doctorScheduleRule.delete({ where: { id } });
+  }
 
   /**
-   * NEW: bulk generate sessions/slots between dateFrom and dateTo.
-   * Typical UX: dateFrom = today, monthsAhead = 1..3 => dateTo auto-computed in controller/DTO layer.
+   * Bulk generate sessions/slots between dateFrom and dateTo.
+   * You can wire this to AvailabilitySlotsService.generateSlots().
    */
   async generateSlots(dto: GenerateSlotsRangeDto) {
     const doctorId = this.toInt(dto.doctorId, 'doctorId');
 
-    // You can normalize dates (recommend start-of-day) in one place.
     const dateFrom = new Date(dto.dateFrom);
     const dateTo = new Date(dto.dateTo);
+
     if (Number.isNaN(dateFrom.getTime()) || Number.isNaN(dateTo.getTime())) {
       throw new BadRequestException('dateFrom/dateTo must be valid ISO dates');
     }
-    if (dateTo <= dateFrom) throw new BadRequestException('dateTo must be after dateFrom');
+    if (dateTo <= dateFrom) {
+      throw new BadRequestException('dateTo must be after dateFrom');
+    }
 
-    // Option A (recommended): call your existing slot generator logic here
+    // Recommended:
     // return this.availabilitySlotsService.generateSlots(doctorId, dto.dateFrom, dto.dateTo);
 
-    // Option B: if you don’t want a cross-module dependency,
-    // keep this as a “thin facade” for now and implement generation elsewhere.
     return {
       message: 'Hook up to AvailabilitySlotsService.generateSlots(doctorId, dateFrom, dateTo)',
       doctorId,
