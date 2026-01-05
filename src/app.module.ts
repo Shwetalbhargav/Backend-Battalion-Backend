@@ -7,12 +7,9 @@ import { PatientModule } from './patient/patient.module';
 import { UsersModule } from './users/users.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { PrismaService } from './prisma/prisma.service';
-import { AuthModule } from './auth/auth.module';
-import { UsersModule } from './users/users.module';
-import { DoctorModule } from './doctor/doctor.module';
-import { PatientModule } from './patient/patient.module';
 import { ScheduleRulesModule } from './schedule-rules/schedule-rules.module';
 import { AvailabilitySlotsModule } from './availability-slots/availability-slots.module';
+import { AppointmentsModule } from './appointments/appointments.module';
 
 @Controller('health')
 class HealthController {
@@ -40,7 +37,8 @@ class HealthController {
     AuthModule,
     ScheduleRulesModule,
     AvailabilitySlotsModule,
- intern/shwetal-main
+    AppointmentsModule,
+ 
   ],
   controllers: [HealthController],
 })

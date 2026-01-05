@@ -191,8 +191,8 @@ export class AvailabilitySlotsService {
         doctorId: did,
         date: { gte: from, lte: to },
         meetingType: query.meetingType,
-        timeOfDay: query.timeOfDay,
         status: query.status,
+        session: query.timeOfDay ? { timeOfDay: query.timeOfDay } : undefined,
       },
       orderBy: [{ date: 'asc' }, { startMinute: 'asc' }],
     });

@@ -3,7 +3,6 @@ import { Module } from '@nestjs/common';
 import { PassportModule } from '@nestjs/passport';
 import { JwtModule } from '@nestjs/jwt';
 import { ConfigModule, ConfigService } from '@nestjs/config';
-import type { StringValue } from 'ms';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { GoogleStrategy } from './google.strategy';
@@ -15,23 +14,16 @@ import { PatientModule } from '../patient/patient.module';
 @Module({
   imports: [
     ConfigModule,
-    PassportModule,
-    UsersModule,
-    DoctorModule,
-    PatientModule,
-    PassportModule.register({ session: false }),
+    PassportModule.register({ defaultStrategy: 'jwt' }),
     UsersModule,
     DoctorModule,
     PatientModule,
     JwtModule.registerAsync({
-      imports: [ConfigModule],
       inject: [ConfigService],
       useFactory: (cfg: ConfigService) => ({
-        secret: cfg.get('JWT_SECRET'),
-        signOptions: { expiresIn: cfg.get('JWT_EXPIRES_IN') ?? '7d' },
         secret: cfg.getOrThrow<string>('JWT_SECRET'),
         signOptions: {
-          expiresIn: cfg.get<string>('JWT_EXPIRES_IN', '7d') as StringValue,
+          expiresIn:  '7d',
         },
       }),
     }),
