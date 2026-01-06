@@ -1,84 +1,213 @@
-
-
-// src/auth/auth.service.ts
-import { Injectable } from '@nestjs/common';
+import { Injectable, ConflictException, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
-import { Role } from '@prisma/client';
-import { UsersService } from '../users/users.service';
-import { DoctorService } from '../doctor/doctor.service';
-import { PatientService } from '../patient/patient.service';
+import * as bcrypt from 'bcrypt';
+import { PrismaService } from '../prisma/prisma.service';
+import { SignupDto, SigninDto } from './dto/register.dto';
+import { UserRole, AuthMethod } from '../../generated/prisma/client';
 
 @Injectable()
 export class AuthService {
   constructor(
-    private readonly jwt: JwtService,
-    private readonly users: UsersService,
-    private readonly doctors: DoctorService,
-    private readonly patients: PatientService,
+    private readonly prisma: PrismaService,
+    private readonly jwtService: JwtService,
   ) {}
 
-  async findOrCreateGoogleUser(payload: {
-    email: string;
-    name: string;
-    provider: 'GOOGLE';
-    providerId: string;
-    role: 'DOCTOR' | 'PATIENT';
-  }) {
-    // 1) find by providerId (best)
-    const byProvider = await this.users.findByProvider(
-      payload.provider,
-      payload.providerId,
-    );
-    if (byProvider) return byProvider;
+  async signup(signupDto: SignupDto) {
+    const { email, password, role } = signupDto;
 
-    // 2) find by email (link old account)
-    const byEmail = await this.users.findByEmail(payload.email);
-    if (byEmail) {
-      return this.users.linkGoogle(byEmail.id, payload.providerId);
-    }
-
-    // 3) create new
-    return this.users.create({
-      email: payload.email,
-      name: payload.name,
-      role: payload.role,
-      provider: payload.provider,
-      providerId: payload.providerId,
+    // Check if user already exists
+    const existingUser = await this.prisma.user.findUnique({
+      where: { email },
     });
-  }
 
-  async ensureProfileForRole(userId: string, role: 'DOCTOR' | 'PATIENT') {
-    if (role === 'DOCTOR') {
-      await this.doctors.ensureDoctorProfile(userId);
-    } else {
-      await this.patients.ensurePatientProfile(userId);
-    }
-  }
-
-  async signJwt(user: any) {
-  async findOrCreateGoogleUser(input: {
-    email: string;
-    name: string;
-    providerId: string;
-    role: Role;
-  }) {
-    const user = await this.users.findOrCreateGoogleUser(input);
-
-    // ✅ create doctor/patient profile row if missing
-    if (user.role === Role.DOCTOR) {
-      await this.doctors.ensureDoctorProfile(user.id);
-    } else {
-      await this.patients.ensurePatientProfile(user.id);
+    if (existingUser) {
+      throw new ConflictException('User with this email already exists');
     }
 
-    return user;
-  }
+    // Hash password
+    const hashedPassword = await bcrypt.hash(password, 10);
 
-  async signJwt(user: { id: number; role: Role; email: string }) {
-    return this.jwt.signAsync({
-      sub: user.id,
-      role: user.role,
-      email: user.email,
+    // Create user
+    const user = await this.prisma.user.create({
+      data: {
+        email,
+        password: hashedPassword,
+        role,
+        authMethod: AuthMethod.EMAIL,
+        isVerified: false,
+        isActive: true,
+      },
+      select: {
+        id: true,
+        email: true,
+        role: true,
+        isVerified: true,
+        createdAt: true,
+      },
     });
+
+    // Generate JWT token
+    const payload = { sub: user.id, email: user.email, role: user.role };
+    const token = await this.jwtService.signAsync(payload);
+
+    return {
+      user,
+      access_token: token,
+    };
+  }
+
+  async signin(signinDto: SigninDto) {
+    const { email, password } = signinDto;
+
+    // Find user
+    const user = await this.prisma.user.findUnique({
+      where: { email },
+    });
+
+    if (!user) {
+      throw new UnauthorizedException('Invalid credentials');
+    }
+
+    // Check if user is active
+    if (!user.isActive) {
+      throw new UnauthorizedException('Account is deactivated');
+    }
+
+    // Verify password
+    if (!user.password) {
+      throw new UnauthorizedException('Invalid credentials');
+    }
+
+    const isPasswordValid = await bcrypt.compare(password, user.password);
+
+    if (!isPasswordValid) {
+      throw new UnauthorizedException('Invalid credentials');
+    }
+
+    // Generate JWT token
+    const payload = { sub: user.id, email: user.email, role: user.role };
+    const token = await this.jwtService.signAsync(payload);
+
+    return {
+      user: {
+        id: user.id,
+        email: user.email,
+        role: user.role,
+        isVerified: user.isVerified,
+      },
+      access_token: token,
+    };
+  }
+
+  async validateGoogleUser(googleUser: any, role?: UserRole) {
+    const { googleId, email, firstName, lastName, picture } = googleUser;
+
+    // Check if user exists by Google ID
+    let user = await this.prisma.user.findUnique({
+      where: { googleId },
+      select: {
+        id: true,
+        email: true,
+        role: true,
+        isVerified: true,
+        isActive: true,
+        createdAt: true,
+      },
+    });
+
+    // If not found by Google ID, check by email
+    if (!user && email) {
+      const existingUser = await this.prisma.user.findUnique({
+        where: { email },
+      });
+
+      // If user exists with email but no Google ID, link Google account
+      if (existingUser && !existingUser.googleId) {
+        user = await this.prisma.user.update({
+          where: { id: existingUser.id },
+          data: {
+            googleId,
+            authMethod: AuthMethod.GOOGLE,
+            // Auto-verify Google OAuth users (Google already verified them)
+            isVerified: true,
+          },
+          select: {
+            id: true,
+            email: true,
+            role: true,
+            isVerified: true,
+            isActive: true,
+            createdAt: true,
+          },
+        });
+      } else if (existingUser) {
+        // User exists with Google ID already
+        user = {
+          id: existingUser.id,
+          email: existingUser.email,
+          role: existingUser.role,
+          isVerified: existingUser.isVerified,
+          isActive: existingUser.isActive,
+          createdAt: existingUser.createdAt,
+        };
+      }
+    }
+
+    // Create new user if doesn't exist
+    if (!user) {
+      user = await this.prisma.user.create({
+        data: {
+          email,
+          googleId,
+          authMethod: AuthMethod.GOOGLE,
+          role: role || UserRole.PATIENT,
+          // Auto-verify Google OAuth users (Google already verified them)
+          isVerified: true,
+          isActive: true,
+        },
+        select: {
+          id: true,
+          email: true,
+          role: true,
+          isVerified: true,
+          isActive: true,
+          createdAt: true,
+        },
+      });
+    } else if (role && user.role !== role) {
+      // If role is provided and different from current role, update it
+      // Note: This allows users to change role on subsequent OAuth logins
+      user = await this.prisma.user.update({
+        where: { id: user.id },
+        data: { role: role as UserRole },
+        select: {
+          id: true,
+          email: true,
+          role: true,
+          isVerified: true,
+          isActive: true,
+          createdAt: true,
+        },
+      });
+    }
+
+    // Check if user is active
+    if (!user.isActive) {
+      throw new UnauthorizedException('Account is deactivated');
+    }
+
+    // Generate JWT token
+    const payload = { sub: user.id, email: user.email, role: user.role };
+    const token = await this.jwtService.signAsync(payload);
+
+    return {
+      user: {
+        id: user.id,
+        email: user.email,
+        role: user.role,
+        isVerified: user.isVerified,
+      },
+      access_token: token,
+    };
   }
 }
