@@ -1,5 +1,6 @@
 import { IsEnum, IsOptional } from 'class-validator';
-import { UserRole } from '../../../generated/prisma/enums';
+import { Role as UserRole } from '@prisma/client';
+
 
 export class GoogleOAuthDto {
   @IsEnum(UserRole)

@@ -1,3 +1,2 @@
-export { JwtStrategy, JwtPayload } from './jwt.strategy';
-export { GoogleStrategy } from './google.strategy';
-
+export { JwtStrategy } from './jwt.strategy';
+export type { JwtPayload } from './jwt.strategy';

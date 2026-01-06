@@ -44,10 +44,11 @@ export class AuthService {
   }
 
   async ensureProfileForRole(userId: string, role: 'DOCTOR' | 'PATIENT') {
+    const numericUserId = Number(userId);
     if (role === 'DOCTOR') {
-      await this.doctors.ensureDoctorProfile(userId);
+      await this.doctors.ensureDoctorProfile(numericUserId);
     } else {
-      await this.patients.ensurePatientProfile(userId);
+      await this.patients.ensurePatientProfile(numericUserId);
     }
   }
 
