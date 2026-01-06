@@ -41,6 +41,11 @@ enum TimeOfDay {
   EVENING
 }
 
+enum ElasticStrategy {
+  WAVE
+  STREAM
+}
+
 /**
  * -------------------- Core Models --------------------
  */
@@ -83,6 +88,7 @@ model Doctor {
   availabilitySessions   AvailabilitySession[]
   doctorDayOverrides     DoctorDayOverride[]
   doctorSessionOverrides DoctorSessionOverride[]
+  sessionOverrides       SessionOverride[]
 }
 
 model Patient {
@@ -290,4 +296,28 @@ model DoctorSessionOverride {
 
   @@unique([doctorId, date, meetingType, timeOfDay, locationKey])
   @@index([doctorId, date, timeOfDay])
+}
+
+model SessionOverride {
+  id          Int         @id @default(autoincrement())
+  doctorId    Int
+  date        DateTime // normalized day start UTC
+  meetingType MeetingType
+  timeOfDay   TimeOfDay
+
+  // override values (optional, only what doctor changes)
+  newStartMinute     Int?
+  newEndMinute       Int?
+  newCapacityPerSlot Int?
+  strategy           ElasticStrategy @default(WAVE)
+
+  // audit
+  reason    String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  doctor Doctor @relation(fields: [doctorId], references: [id], onDelete: Cascade)
+
+  @@unique([doctorId, date, meetingType, timeOfDay])
+  @@index([doctorId, date])
 }
