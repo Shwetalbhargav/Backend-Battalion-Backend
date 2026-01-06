@@ -10,6 +10,7 @@ import { PrismaService } from './prisma/prisma.service';
 import { ScheduleRulesModule } from './schedule-rules/schedule-rules.module';
 import { AvailabilitySlotsModule } from './availability-slots/availability-slots.module';
 import { ElasticSchedulingModule } from './elastic-scheduling/elastic-scheduling.module';
+import { AppointmentsModule } from './appointments/appointments.module';
 
 @Controller('health')
 class HealthController {
@@ -30,12 +31,9 @@ class HealthController {
     UsersModule,
     DoctorModule,
     PatientModule,
-    UsersModule,
     ScheduleRulesModule,
     AvailabilitySlotsModule,
-    AuthModule,
-    ScheduleRulesModule,
-    AvailabilitySlotsModule,
+    AppointmentsModule,    
     ElasticSchedulingModule,
   ],
   controllers: [HealthController],
