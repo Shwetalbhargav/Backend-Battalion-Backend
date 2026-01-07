@@ -37,6 +37,7 @@ export class UsersService {
 
         provider: dto.provider ?? null,
         providerId: dto.providerId ?? null,
+        
       },
     });
   }

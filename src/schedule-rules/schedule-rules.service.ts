@@ -7,18 +7,20 @@ import {
   DayOfWeek,
   TimeOfDay,
 } from '@prisma/client';
-
-// src/schedule-rules/schedule-rules.service.ts
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-
 import { PrismaService } from '../prisma/prisma.service';
 import { AvailabilitySlotsService } from '../availability-slots/availability-slots.service';
 import { CreateScheduleRuleDto } from './dto/create-schedule-rule.dto';
-
 import { BulkScheduleRulesDto } from './dto/bulk-schedule-rules.dto';
-
 import { UpdateScheduleRuleDto } from './dto/update-schedule-rule.dto';
 import { GenerateSlotsRangeDto } from './dto/generate-slots-range.dto';
+import { UpsertDayOverrideDto } from './dto/upsert-day-override.dto';
+import { UpsertSessionOverrideDto } from './dto/upsert-session-override.dto';
+
+// If you already have AvailabilitySlotsService, inject it and call it here.
+// import { AvailabilitySlotsService } from '../availability-slots/availability-slots.service';
+
+
+import { GenerateSlotsRangeDto } from "./dto/generate-slots-range.dto";
 import { UpsertDayOverrideDto } from './dto/upsert-day-override.dto';
 import { UpsertSessionOverrideDto } from './dto/upsert-session-override.dto';
 
@@ -132,6 +134,9 @@ export class ScheduleRulesService {
   async create(dto: CreateScheduleRuleDto) {
     const doctorId = this.toInt(dto.doctorId, 'doctorId');
 
+
+    // (Optional) validate doctor exists
+
     const doctor = await this.prisma.doctor.findUnique({ where: { id: doctorId } });
     if (!doctor) throw new BadRequestException(`doctorId ${doctorId} not found`);
 
@@ -231,12 +236,16 @@ export class ScheduleRulesService {
     const where = doctorId ? { doctorId: this.toInt(doctorId, 'doctorId') } : {};
     return this.prisma.doctorScheduleRule.findMany({
       where,
+
+      orderBy: [{ doctorId: 'asc' }, { dayOfWeek: 'asc' }, { timeOfDay: 'asc' }, { startMinute: 'asc' }],
+
       orderBy: [
         { doctorId: 'asc' },
         { dayOfWeek: 'asc' },
         { timeOfDay: 'asc' },
         { startMinute: 'asc' },
       ],
+
 
     });
 
@@ -381,6 +390,86 @@ export class ScheduleRulesService {
     });
   }
 
+
+    if (!rule) throw new NotFoundException(`Schedule rule ${ruleId} not found`);
+    return rule;
+  }
+
+  async update(id: string, dto: UpdateScheduleRuleDto) {
+    const ruleId = this.toInt(id, 'id');
+    await this.findOne(String(ruleId));
+
+    return this.prisma.doctorScheduleRule.update({
+      where: { id: ruleId },
+      data: {
+        clinicId: dto.clinicId ?? undefined,
+        meetingType: dto.meetingType ?? undefined,
+        dayOfWeek: dto.dayOfWeek ?? undefined,
+        timeOfDay: dto.timeOfDay ?? undefined,
+        startMinute: dto.startMinute ?? undefined,
+        endMinute: dto.endMinute ?? undefined,
+        slotDurationMin: dto.slotDurationMin ?? undefined,
+        capacityPerSlot: dto.capacityPerSlot ?? undefined,
+        isActive: dto.isActive ?? undefined,
+      },
+    });
+  }
+
+  async remove(id: string) {
+    const ruleId = this.toInt(id, 'id');
+    await this.findOne(String(ruleId));
+    return this.prisma.doctorScheduleRule.delete({ where: { id: ruleId } });
+  }
+
+  /**
+   * NEW: bulk generate sessions/slots between dateFrom and dateTo.
+   * Typical UX: dateFrom = today, monthsAhead = 1..3 => dateTo auto-computed in controller/DTO layer.
+   */
+  async generateSlots(dto: GenerateSlotsRangeDto) {
+    const doctorId = this.toInt(dto.doctorId, 'doctorId');
+
+    // You can normalize dates (recommend start-of-day) in one place.
+    const dateFrom = new Date(dto.dateFrom);
+    const dateTo = new Date(dto.dateTo);
+    if (Number.isNaN(dateFrom.getTime()) || Number.isNaN(dateTo.getTime())) {
+      throw new BadRequestException('dateFrom/dateTo must be valid ISO dates');
+    }
+    if (dateTo <= dateFrom) throw new BadRequestException('dateTo must be after dateFrom');
+
+    // Option A (recommended): call your existing slot generator logic here
+    // return this.availabilitySlotsService.generateSlots(doctorId, dto.dateFrom, dto.dateTo);
+
+    // Option B: if you don’t want a cross-module dependency,
+    // keep this as a “thin facade” for now and implement generation elsewhere.
+    return {
+      message: 'Hook up to AvailabilitySlotsService.generateSlots(doctorId, dateFrom, dateTo)',
+      doctorId,
+      dateFrom: dto.dateFrom,
+      dateTo: dto.dateTo,
+    };
+  }
+
+  async upsertDayOverride(dto: UpsertDayOverrideDto) {
+    const doctorId = this.toInt(dto.doctorId, 'doctorId');
+    const date = new Date(dto.date);
+    if (Number.isNaN(date.getTime())) throw new BadRequestException('date must be valid ISO date');
+
+    return this.prisma.doctorDayOverride.upsert({
+      where: { doctorId_date: { doctorId, date } },
+      create: {
+        doctorId,
+        date,
+        isClosed: dto.isClosed ?? true,
+        note: dto.note ?? null,
+      },
+      update: {
+        isClosed: dto.isClosed ?? true,
+        note: dto.note ?? null,
+      },
+    });
+  }
+
+
   async remove(id: number) {
     await this.findOne(id);
     return this.prisma.doctorScheduleRule.delete({ where: { id } });
@@ -433,6 +522,7 @@ export class ScheduleRulesService {
       },
     });
   }
+
 
   async upsertSessionOverride(dto: UpsertSessionOverrideDto) {
     const doctorId = this.toInt(dto.doctorId, 'doctorId');
