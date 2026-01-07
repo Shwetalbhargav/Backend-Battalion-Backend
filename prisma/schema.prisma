@@ -85,6 +85,8 @@ model Doctor {
   scheduleRules DoctorScheduleRule[]
   slots         AvailabilitySlot[]
 
+
+
   appointments Appointment[]
 
   createdAt              DateTime                @default(now())
@@ -299,6 +301,8 @@ model DoctorSessionOverride {
   @@index([doctorId, date, timeOfDay])
 }
 
+
+
 /**
  * -------------------- Appointment Booking--------------------
  */
@@ -328,3 +332,4 @@ model Appointment {
   @@index([doctorId, status])
   @@index([patientId, status])
 }
+

@@ -18,6 +18,7 @@ export class UsersService {
         role: dto.role ?? Role.PATIENT,
         provider: dto.provider ?? null,
         providerId: dto.providerId ?? null,
+        
       },
     });
   }
