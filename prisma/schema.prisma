@@ -41,6 +41,15 @@ enum TimeOfDay {
   EVENING
 }
 
+
+enum SchedulingStrategy {
+  STREAM
+  WAVE
+}
+
+
+/* -------------------- Core Models -------------------- */
+
 enum AppointmentStatus {
   BOOKED
   CONFIRMED
@@ -51,6 +60,7 @@ enum AppointmentStatus {
 /**
  * -------------------- Core Models --------------------
  */
+
 
 model User {
   id    Int     @id @default(autoincrement())
@@ -197,6 +207,19 @@ model DoctorScheduleRule {
 
   doctor Doctor  @relation(fields: [doctorId], references: [id], onDelete: Cascade)
   clinic Clinic? @relation(fields: [clinicId], references: [id])
+
+
+  strategy         SchedulingStrategy @default(STREAM)
+
+  // for simple wave
+  waveEveryMin     Int?   // e.g. 60 (wave repeats every hour)
+  waveCapacity     Int?   // e.g. 4  (how many patients in that wave block)
+
+  // for advanced wave patterns
+  wavePattern      Json?  // Postgres jsonb (Prisma Json)
+  
+  @@index([doctorId, dayOfWeek, isActive])
+
 
   @@unique([doctorId, meetingType, dayOfWeek, timeOfDay, startMinute, endMinute])
   @@index([doctorId, dayOfWeek, isActive])

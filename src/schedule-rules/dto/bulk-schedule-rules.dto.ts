@@ -1,73 +1,71 @@
-
 import {
+  ArrayMinSize,
+  IsArray,
   IsBoolean,
   IsEnum,
   IsInt,
   IsNotEmpty,
-  IsObject,
   IsOptional,
   IsString,
   Min,
   ValidateIf,
+  ValidateNested,
+  IsDateString,
+  IsObject,
 } from 'class-validator';
+import { Type } from 'class-transformer';
 import { DayOfWeek, MeetingType, SchedulingStrategy, TimeOfDay } from '@prisma/client';
 
-export class CreateScheduleRuleDto {
+export class BulkSessionDto {
+  @IsEnum(TimeOfDay)
+  timeOfDay: TimeOfDay;
+
+  @IsString()
+  @IsNotEmpty()
+  startTime: string; // "09:00"
+
+  @IsString()
+  @IsNotEmpty()
+  endTime: string; // "12:00"
+}
+
+export class BulkScheduleRulesDto {
   @IsString()
   @IsNotEmpty()
   doctorId: string;
 
-import { IsBoolean, IsEnum, IsInt, IsOptional, Min } from 'class-validator';
-import { Type } from 'class-transformer';
-import { DayOfWeek, MeetingType, TimeOfDay } from '@prisma/client';
-
-export class CreateScheduleRuleDto {
-  @Type(() => Number)
-  @IsInt()
-  doctorId: number;
-
-
-  @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  clinicId?: number | null;
-
   @IsEnum(MeetingType)
   meetingType: MeetingType;
 
-  @IsEnum(DayOfWeek)
-  dayOfWeek: DayOfWeek;
+  @IsDateString()
+  dateFrom: string; // "2026-01-05"
 
-  @IsEnum(TimeOfDay)
-  timeOfDay: TimeOfDay;
+  @IsDateString()
+  dateTo: string; // "2026-01-12"
 
-  @Type(() => Number)
-  @IsInt()
-  @Min(0)
-  startMinute: number; // minutes from midnight
+  @IsArray()
+  @ArrayMinSize(1)
+  @IsEnum(DayOfWeek, { each: true })
+  daysOfWeek: DayOfWeek[];
 
-  @Type(() => Number)
-  @IsInt()
-
-  @Min(1)
-  endMinute: number; // minutes from midnight
-
-  @Min(0)
-  endMinute: number;
-
+  @IsArray()
+  @ArrayMinSize(1)
+  @ValidateNested({ each: true })
+  @Type(() => BulkSessionDto)
+  sessions: BulkSessionDto[];
 
   /**
-   * STREAM defaults
+   * STREAM fields
    */
   @IsOptional()
-  @Type(() => Number)
   @IsInt()
-  slotDurationMin?: number;
+  @Min(5)
+  slotDurationMin?: number; // default 15
 
   @IsOptional()
-  @Type(() => Number)
   @IsInt()
-  capacityPerSlot?: number;
+  @Min(1)
+  capacityPerSlot?: number; // default 1
 
   /**
    * New: STREAM | WAVE
@@ -77,8 +75,7 @@ export class CreateScheduleRuleDto {
   strategy?: SchedulingStrategy; // default STREAM
 
   /**
-   * WAVE (simple mode): requires waveEveryMin + waveCapacity
-   * If wavePattern is present, these can be omitted.
+   * WAVE (simple mode): requires waveEveryMin + waveCapacity if wavePattern not provided
    */
   @ValidateIf((o) => (o.strategy ?? SchedulingStrategy.STREAM) === SchedulingStrategy.WAVE && !o.wavePattern)
   @IsInt()
@@ -98,6 +95,16 @@ export class CreateScheduleRuleDto {
   @IsOptional()
   @IsObject()
   wavePattern?: Record<string, any>;
+
+  /**
+   * OFFLINE helpers
+   */
+  @IsOptional()
+  clinicId?: string;
+
+  @IsOptional()
+  @IsString()
+  locationKey?: string;
 
   @IsOptional()
   @IsBoolean()

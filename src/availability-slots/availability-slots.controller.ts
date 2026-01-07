@@ -1,3 +1,6 @@
+
+import { Body, Controller, Get, Patch, Param, Post, Query, BadRequestException } from '@nestjs/common';
+
 import {
   BadRequestException,
   Body,
@@ -9,6 +12,7 @@ import {
   Query,
   ParseIntPipe,
 } from '@nestjs/common';
+
 import { AvailabilitySlotsService } from './availability-slots.service';
 import { GenerateSlotsDto } from './dto/generate-slots.dto';
 import { UpdateSlotDto } from './dto/update-slot.dto';
@@ -69,8 +73,17 @@ export class AvailabilitySlotsController {
   }
 
   @Patch(':id')
+
+  update(@Param('id') id: string, @Body() dto: UpdateSlotDto) {
+    const slotId = Number(id);
+    if (!Number.isInteger(slotId) || slotId <= 0) {
+      throw new BadRequestException('Invalid slot id');
+    }
+    return this.service.updateSlot(slotId, dto);
+
   updateSlot(@Param('id', ParseIntPipe) id: number, @Body() dto: UpdateSlotDto) {
     return this.availabilitySlotsService.updateSlot(id, dto);
+
   }
 
   @Post('create-extra')
