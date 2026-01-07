@@ -41,6 +41,13 @@ enum TimeOfDay {
   EVENING
 }
 
+enum AppointmentStatus {
+  BOOKED
+  CONFIRMED
+  CANCELLED_BY_PATIENT
+  CANCELLED_BY_DOCTOR
+}
+
 /**
  * -------------------- Core Models --------------------
  */
@@ -78,6 +85,10 @@ model Doctor {
   scheduleRules DoctorScheduleRule[]
   slots         AvailabilitySlot[]
 
+
+
+  appointments Appointment[]
+
   createdAt              DateTime                @default(now())
   updatedAt              DateTime                @updatedAt
   availabilitySessions   AvailabilitySession[]
@@ -90,10 +101,11 @@ model Patient {
   userId Int  @unique
   user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  gender     String?
-  dob        DateTime?
-  bloodGroup String?
-  phone      String?
+  gender       String?
+  dob          DateTime?
+  bloodGroup   String?
+  phone        String?
+  appointments Appointment[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -206,21 +218,18 @@ model AvailabilitySlot {
   date        DateTime
   startMinute Int
   endMinute   Int
-  timeOfDay   TimeOfDay
 
-  startAt DateTime
-  endAt   DateTime
-
+  // ✅ add these (your index already expects status)
+  status      SlotStatus @default(AVAILABLE)
   capacity    Int        @default(1)
   bookedCount Int        @default(0)
-  status      SlotStatus @default(AVAILABLE)
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
 
   session AvailabilitySession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
   doctor  Doctor              @relation(fields: [doctorId], references: [id], onDelete: Cascade)
   clinic  Clinic?             @relation(fields: [clinicId], references: [id])
+
+  // ✅ 1 appointment per slot
+  appointment Appointment?
 
   @@unique([sessionId, startMinute])
   @@index([doctorId, date, status])
@@ -291,3 +300,36 @@ model DoctorSessionOverride {
   @@unique([doctorId, date, meetingType, timeOfDay, locationKey])
   @@index([doctorId, date, timeOfDay])
 }
+
+
+
+/**
+ * -------------------- Appointment Booking--------------------
+ */
+
+model Appointment {
+  id Int @id @default(autoincrement())
+
+  doctorId  Int
+  patientId Int
+  slotId    Int @unique // ✅ 1 appointment per slot
+
+  status AppointmentStatus @default(BOOKED)
+
+  note         String?
+  cancelReason String?
+
+  confirmedAt DateTime?
+  cancelledAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  doctor  Doctor           @relation(fields: [doctorId], references: [id], onDelete: Cascade)
+  patient Patient          @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  slot    AvailabilitySlot @relation(fields: [slotId], references: [id], onDelete: Cascade)
+
+  @@index([doctorId, status])
+  @@index([patientId, status])
+}
+

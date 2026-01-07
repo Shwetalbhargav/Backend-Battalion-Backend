@@ -1,7 +1,14 @@
+// src/schedule-rules/schedule-rules.service.ts
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateScheduleRuleDto } from './dto/create-schedule-rule.dto';
 import { UpdateScheduleRuleDto } from './dto/update-schedule-rule.dto';
+import { GenerateSlotsRangeDto } from './dto/generate-slots-range.dto';
+import { UpsertDayOverrideDto } from './dto/upsert-day-override.dto';
+import { UpsertSessionOverrideDto } from './dto/upsert-session-override.dto';
+
+// If you already have AvailabilitySlotsService, inject it and call it here.
+// import { AvailabilitySlotsService } from '../availability-slots/availability-slots.service';
 
 import { GenerateSlotsRangeDto } from "./dto/generate-slots-range.dto";
 import { UpsertDayOverrideDto } from './dto/upsert-day-override.dto';
@@ -28,7 +35,9 @@ export class ScheduleRulesService {
   async create(dto: CreateScheduleRuleDto) {
     const doctorId = this.toInt(dto.doctorId, 'doctorId');
 
+
     // (Optional) validate doctor exists
+
     const doctor = await this.prisma.doctor.findUnique({ where: { id: doctorId } });
     if (!doctor) throw new BadRequestException(`doctorId ${doctorId} not found`);
 
@@ -52,16 +61,44 @@ export class ScheduleRulesService {
     const where = doctorId ? { doctorId: this.toInt(doctorId, 'doctorId') } : {};
     return this.prisma.doctorScheduleRule.findMany({
       where,
+
       orderBy: [{ doctorId: 'asc' }, { dayOfWeek: 'asc' }, { timeOfDay: 'asc' }, { startMinute: 'asc' }],
+
+      orderBy: [
+        { doctorId: 'asc' },
+        { dayOfWeek: 'asc' },
+        { timeOfDay: 'asc' },
+        { startMinute: 'asc' },
+      ],
+
     });
   }
 
-  async findOne(id: string) {
-    const ruleId = this.toInt(id, 'id');
+  async findOne(id: number) {
+    const rule = await this.prisma.doctorScheduleRule.findUnique({ where: { id } });
+    if (!rule) throw new NotFoundException(`Schedule rule ${id} not found`);
+    return rule;
+  }
 
-    const rule = await this.prisma.doctorScheduleRule.findUnique({
-      where: { id: ruleId },
+  async update(id: number, dto: UpdateScheduleRuleDto) {
+    await this.findOne(id);
+
+    return this.prisma.doctorScheduleRule.update({
+      where: { id },
+      data: {
+        clinicId: dto.clinicId ?? undefined,
+        meetingType: dto.meetingType ?? undefined,
+        dayOfWeek: dto.dayOfWeek ?? undefined,
+        timeOfDay: dto.timeOfDay ?? undefined,
+        startMinute: dto.startMinute ?? undefined,
+        endMinute: dto.endMinute ?? undefined,
+        slotDurationMin: dto.slotDurationMin ?? undefined,
+        capacityPerSlot: dto.capacityPerSlot ?? undefined,
+        isActive: dto.isActive ?? undefined,
+      },
     });
+  }
+
 
     if (!rule) throw new NotFoundException(`Schedule rule ${ruleId} not found`);
     return rule;
@@ -140,6 +177,61 @@ export class ScheduleRulesService {
       },
     });
   }
+
+
+  async remove(id: number) {
+    await this.findOne(id);
+    return this.prisma.doctorScheduleRule.delete({ where: { id } });
+  }
+
+  /**
+   * Bulk generate sessions/slots between dateFrom and dateTo.
+   * You can wire this to AvailabilitySlotsService.generateSlots().
+   */
+  async generateSlots(dto: GenerateSlotsRangeDto) {
+    const doctorId = this.toInt(dto.doctorId, 'doctorId');
+
+    const dateFrom = new Date(dto.dateFrom);
+    const dateTo = new Date(dto.dateTo);
+
+    if (Number.isNaN(dateFrom.getTime()) || Number.isNaN(dateTo.getTime())) {
+      throw new BadRequestException('dateFrom/dateTo must be valid ISO dates');
+    }
+    if (dateTo <= dateFrom) {
+      throw new BadRequestException('dateTo must be after dateFrom');
+    }
+
+    // Recommended:
+    // return this.availabilitySlotsService.generateSlots(doctorId, dto.dateFrom, dto.dateTo);
+
+    return {
+      message: 'Hook up to AvailabilitySlotsService.generateSlots(doctorId, dateFrom, dateTo)',
+      doctorId,
+      dateFrom: dto.dateFrom,
+      dateTo: dto.dateTo,
+    };
+  }
+
+  async upsertDayOverride(dto: UpsertDayOverrideDto) {
+    const doctorId = this.toInt(dto.doctorId, 'doctorId');
+    const date = new Date(dto.date);
+    if (Number.isNaN(date.getTime())) throw new BadRequestException('date must be valid ISO date');
+
+    return this.prisma.doctorDayOverride.upsert({
+      where: { doctorId_date: { doctorId, date } },
+      create: {
+        doctorId,
+        date,
+        isClosed: dto.isClosed ?? true,
+        note: dto.note ?? null,
+      },
+      update: {
+        isClosed: dto.isClosed ?? true,
+        note: dto.note ?? null,
+      },
+    });
+  }
+
 
   async upsertSessionOverride(dto: UpsertSessionOverrideDto) {
     const doctorId = this.toInt(dto.doctorId, 'doctorId');

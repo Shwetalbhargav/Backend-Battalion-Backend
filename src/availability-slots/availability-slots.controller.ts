@@ -16,7 +16,7 @@ import { MeetingType, SlotStatus, TimeOfDay } from '@prisma/client';
 
 @Controller('availability-slots')
 export class AvailabilitySlotsController {
-  constructor(private readonly availabilitySlotsService: AvailabilitySlotsService) {}
+  constructor(private readonly availabilitySlotsService: AvailabilitySlotsService) { }
 
   @Post('generate')
   generate(@Body() dto: GenerateSlotsDto) {
