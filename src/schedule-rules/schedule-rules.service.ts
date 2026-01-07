@@ -1,50 +1,40 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+// src/schedule-rules/schedule-rules.service.ts
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateScheduleRuleDto } from './dto/create-schedule-rule.dto';
+import { UpdateScheduleRuleDto } from './dto/update-schedule-rule.dto';
+import { GenerateSlotsRangeDto } from './dto/generate-slots-range.dto';
+import { UpsertDayOverrideDto } from './dto/upsert-day-override.dto';
+import { UpsertSessionOverrideDto } from './dto/upsert-session-override.dto';
 
-type Day = 'MON' | 'TUE' | 'WED' | 'THU' | 'FRI' | 'SAT' | 'SUN';
-type MeetingType = 'ONLINE' | 'OFFLINE';
-type TimeOfDay = 'MORNING' | 'EVENING';
+// If you already have AvailabilitySlotsService, inject it and call it here.
+// import { AvailabilitySlotsService } from '../availability-slots/availability-slots.service';
 
 @Injectable()
 export class ScheduleRulesService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    // private readonly availabilitySlotsService: AvailabilitySlotsService,
+  ) {}
 
-  /**
-   * TS NOTE:
-   * If Prisma Client types are not refreshed yet, TS will say:
-   * "Property 'doctorScheduleRule' does not exist on type PrismaService"
-   * Using `as any` removes the TS error immediately.
-   *
-   * Still make sure you run:
-   *   npx prisma generate
-   * and restart TS server.
-   */
-  private get db() {
-    return this.prisma as any;
-  }
-
-  private validateWindow(start: number, end: number) {
-    if (end <= start) throw new BadRequestException('endMinute must be greater than startMinute');
-    if (start < 0 || end > 1440) throw new BadRequestException('Minutes must be between 0 and 1440');
+  private toInt(value: unknown, field: string): number {
+    const n = typeof value === 'number' ? value : Number(value);
+    if (!Number.isInteger(n) || n <= 0) {
+      throw new BadRequestException(`${field} must be a positive integer`);
+    }
+    return n;
   }
 
   async create(dto: CreateScheduleRuleDto) {
-    this.validateWindow(dto.startMinute, dto.endMinute);
+    const doctorId = this.toInt(dto.doctorId, 'doctorId');
 
-    // Int schema: doctorId/clinicId are numbers
-    const doctorId = Number(dto.doctorId);
-    if (Number.isNaN(doctorId)) throw new BadRequestException('doctorId must be a number');
+    const doctor = await this.prisma.doctor.findUnique({ where: { id: doctorId } });
+    if (!doctor) throw new BadRequestException(`doctorId ${doctorId} not found`);
 
-    const clinicId = dto.clinicId !== undefined && dto.clinicId !== null ? Number(dto.clinicId) : null;
-    if (dto.meetingType === 'OFFLINE' && !clinicId) {
-      throw new BadRequestException('clinicId is required for OFFLINE schedule rule');
-    }
-
-    return this.db.doctorScheduleRule.create({
+    return this.prisma.doctorScheduleRule.create({
       data: {
         doctorId,
-        clinicId,
+        clinicId: dto.clinicId ?? null,
         meetingType: dto.meetingType,
         dayOfWeek: dto.dayOfWeek,
         timeOfDay: dto.timeOfDay,
@@ -58,76 +48,134 @@ export class ScheduleRulesService {
   }
 
   async findAll(doctorId?: string) {
-    const where = doctorId ? { doctorId: Number(doctorId) } : undefined;
-    if (doctorId && Number.isNaN(where.doctorId)) {
-      throw new BadRequestException('doctorId must be a number');
-    }
-
-    return this.db.doctorScheduleRule.findMany({
+    const where = doctorId ? { doctorId: this.toInt(doctorId, 'doctorId') } : {};
+    return this.prisma.doctorScheduleRule.findMany({
       where,
-      orderBy: [{ doctorId: 'asc' }, { dayOfWeek: 'asc' }, { startMinute: 'asc' }],
+      orderBy: [
+        { doctorId: 'asc' },
+        { dayOfWeek: 'asc' },
+        { timeOfDay: 'asc' },
+        { startMinute: 'asc' },
+      ],
     });
   }
 
-  /**
-   * Bulk defaults:
-   * Mon–Fri: Morning 10–13, Evening 18–22
-   * Sat: Morning 9–11:30
-   * For BOTH meeting types ONLINE and OFFLINE
-   */
-  async bulkCreateDefaults(doctorIdRaw: string | number, clinicIdRaw?: string | number) {
-    const doctorId = Number(doctorIdRaw);
-    if (Number.isNaN(doctorId)) throw new BadRequestException('doctorId must be a number');
+  async findOne(id: number) {
+    const rule = await this.prisma.doctorScheduleRule.findUnique({ where: { id } });
+    if (!rule) throw new NotFoundException(`Schedule rule ${id} not found`);
+    return rule;
+  }
 
-    const clinicId = clinicIdRaw !== undefined ? Number(clinicIdRaw) : undefined;
-    if (clinicIdRaw !== undefined && Number.isNaN(clinicId)) {
-      throw new BadRequestException('clinicId must be a number');
-    }
+  async update(id: number, dto: UpdateScheduleRuleDto) {
+    await this.findOne(id);
 
-    const weekdays: Day[] = ['MON', 'TUE', 'WED', 'THU', 'FRI'];
-    const meetingTypes: MeetingType[] = ['ONLINE', 'OFFLINE'];
-
-    const templates: Array<{
-      dayOfWeek: Day;
-      timeOfDay: TimeOfDay;
-      startMinute: number;
-      endMinute: number;
-    }> = [
-      ...weekdays.map((d) => ({ dayOfWeek: d, timeOfDay: 'MORNING' as const, startMinute: 600, endMinute: 780 })), // 10:00-13:00
-      ...weekdays.map((d) => ({ dayOfWeek: d, timeOfDay: 'EVENING' as const, startMinute: 1080, endMinute: 1320 })), // 18:00-22:00
-      { dayOfWeek: 'SAT', timeOfDay: 'MORNING', startMinute: 540, endMinute: 690 }, // 09:00-11:30
-    ];
-
-    const data: any[] = [];
-
-    for (const t of templates) {
-      for (const mt of meetingTypes) {
-        if (mt === 'OFFLINE' && !clinicId) continue;
-
-        data.push({
-          doctorId,
-          clinicId: mt === 'OFFLINE' ? clinicId : null,
-          meetingType: mt,
-          dayOfWeek: t.dayOfWeek,
-          timeOfDay: t.timeOfDay,
-          startMinute: t.startMinute,
-          endMinute: t.endMinute,
-          slotDurationMin: 15,
-          capacityPerSlot: 1,
-          isActive: true,
-        });
-      }
-    }
-
-    if (data.length === 0) {
-      throw new BadRequestException('No rules generated. Provide clinicId to generate OFFLINE rules.');
-    }
-
-    const result = await this.db.doctorScheduleRule.createMany({
-      data,
-      skipDuplicates: true,
+    return this.prisma.doctorScheduleRule.update({
+      where: { id },
+      data: {
+        clinicId: dto.clinicId ?? undefined,
+        meetingType: dto.meetingType ?? undefined,
+        dayOfWeek: dto.dayOfWeek ?? undefined,
+        timeOfDay: dto.timeOfDay ?? undefined,
+        startMinute: dto.startMinute ?? undefined,
+        endMinute: dto.endMinute ?? undefined,
+        slotDurationMin: dto.slotDurationMin ?? undefined,
+        capacityPerSlot: dto.capacityPerSlot ?? undefined,
+        isActive: dto.isActive ?? undefined,
+      },
     });
+  }
 
-    return { created: result.count };
+  async remove(id: number) {
+    await this.findOne(id);
+    return this.prisma.doctorScheduleRule.delete({ where: { id } });
+  }
+
+  /**
+   * Bulk generate sessions/slots between dateFrom and dateTo.
+   * You can wire this to AvailabilitySlotsService.generateSlots().
+   */
+  async generateSlots(dto: GenerateSlotsRangeDto) {
+    const doctorId = this.toInt(dto.doctorId, 'doctorId');
+
+    const dateFrom = new Date(dto.dateFrom);
+    const dateTo = new Date(dto.dateTo);
+
+    if (Number.isNaN(dateFrom.getTime()) || Number.isNaN(dateTo.getTime())) {
+      throw new BadRequestException('dateFrom/dateTo must be valid ISO dates');
+    }
+    if (dateTo <= dateFrom) {
+      throw new BadRequestException('dateTo must be after dateFrom');
+    }
+
+    // Recommended:
+    // return this.availabilitySlotsService.generateSlots(doctorId, dto.dateFrom, dto.dateTo);
+
+    return {
+      message: 'Hook up to AvailabilitySlotsService.generateSlots(doctorId, dateFrom, dateTo)',
+      doctorId,
+      dateFrom: dto.dateFrom,
+      dateTo: dto.dateTo,
+    };
+  }
+
+  async upsertDayOverride(dto: UpsertDayOverrideDto) {
+    const doctorId = this.toInt(dto.doctorId, 'doctorId');
+    const date = new Date(dto.date);
+    if (Number.isNaN(date.getTime())) throw new BadRequestException('date must be valid ISO date');
+
+    return this.prisma.doctorDayOverride.upsert({
+      where: { doctorId_date: { doctorId, date } },
+      create: {
+        doctorId,
+        date,
+        isClosed: dto.isClosed ?? true,
+        note: dto.note ?? null,
+      },
+      update: {
+        isClosed: dto.isClosed ?? true,
+        note: dto.note ?? null,
+      },
+    });
+  }
+
+  async upsertSessionOverride(dto: UpsertSessionOverrideDto) {
+    const doctorId = this.toInt(dto.doctorId, 'doctorId');
+    const date = new Date(dto.date);
+    if (Number.isNaN(date.getTime())) throw new BadRequestException('date must be valid ISO date');
+
+    return this.prisma.doctorSessionOverride.upsert({
+      where: {
+        doctorId_date_meetingType_timeOfDay_locationKey: {
+          doctorId,
+          date,
+          meetingType: dto.meetingType,
+          timeOfDay: dto.timeOfDay,
+          locationKey: dto.locationKey ?? 'NONE',
+        },
+      },
+      create: {
+        doctorId,
+        clinicId: dto.clinicId ?? null,
+        date,
+        meetingType: dto.meetingType,
+        timeOfDay: dto.timeOfDay,
+        locationKey: dto.locationKey ?? 'NONE',
+        isClosed: dto.isClosed ?? false,
+        startMinute: dto.startMinute ?? null,
+        endMinute: dto.endMinute ?? null,
+        slotDurationMin: dto.slotDurationMin ?? null,
+        capacityPerSlot: dto.capacityPerSlot ?? null,
+        note: dto.note ?? null,
+      },
+      update: {
+        clinicId: dto.clinicId ?? undefined,
+        isClosed: dto.isClosed ?? undefined,
+        startMinute: dto.startMinute ?? undefined,
+        endMinute: dto.endMinute ?? undefined,
+        slotDurationMin: dto.slotDurationMin ?? undefined,
+        capacityPerSlot: dto.capacityPerSlot ?? undefined,
+        note: dto.note ?? undefined,
+      },
+    });
   }
 }

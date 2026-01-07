@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateDoctorDto } from './dto/create-doctor.dto';
 import { UpdateDoctorDto } from './dto/update-doctor.dto';
@@ -8,54 +8,103 @@ export class DoctorService {
   constructor(private readonly prisma: PrismaService) {}
 
   async create(dto: CreateDoctorDto) {
-    // Prevent double profile creation
-    const existing = await this.prisma.doctor.findUnique({
-      where: { userId: dto.userId },
-    });
-    if (existing) {
-      throw new BadRequestException('Doctor profile already exists for this user');
-    }
-
-    return this.prisma.doctor.create({
-      data: {
-        userId: dto.userId,
-        specialization: dto.specialization,
-        licenseNumber: dto.licenseNumber,
-        experienceYears: dto.experienceYears,
-        bio: dto.bio,
-      },
-      include: { user: true },
-    });
+  if (dto.userId === undefined || dto.userId === null) {
+    throw new BadRequestException('userId is required');
   }
+
+  const existing = await this.prisma.doctor.findUnique({
+    where: { userId: dto.userId },
+  });
+  if (existing) {
+    throw new BadRequestException('Doctor profile already exists for this userId');
+  }
+
+  return this.prisma.doctor.create({
+    data: {
+      userId: dto.userId,
+      bio: (dto as any).bio ?? null,
+      isActive: (dto as any).isActive ?? true,
+    },
+  });
+}
+
 
   findAll() {
-    return this.prisma.doctor.findMany({ include: { user: true } });
-  }
-
-  findOne(id: number) {
-    return this.prisma.doctor.findUnique({
-      where: { id },
+    return this.prisma.doctor.findMany({
       include: { user: true },
+      orderBy: { id: 'asc' },
     });
   }
 
-  update(id: number, dto: UpdateDoctorDto) {
-    return this.prisma.doctor.update({
+  async findOne(id: number) {
+    const doc = await this.prisma.doctor.findUnique({
       where: { id },
-      data: {
-        specialization: dto.specialization,
-        licenseNumber: dto.licenseNumber,
-        experienceYears: dto.experienceYears,
-        bio: dto.bio,
-      },
       include: { user: true },
     });
+    if (!doc) throw new NotFoundException('Doctor not found');
+    return doc;
   }
 
-  remove(id: number) {
-    return this.prisma.doctor.delete({
-      where: { id },
-      include: { user: true },
-    });
+  
+
+  async update(id: number, dto: UpdateDoctorDto) {
+  await this.findOne(id);
+
+  return this.prisma.doctor.update({
+    where: { id },
+    data: {
+      bio: (dto as any).bio ?? undefined,
+      isActive: (dto as any).isActive ?? undefined,
+
+      // Replace ALL specialties if specialtyIds is provided
+      specialties: (dto as any).specialtyIds
+        ? {
+            deleteMany: {}, // deletes existing DoctorSpecialty rows for this doctor
+            create: (dto as any).specialtyIds.map((specialtyId: number) => ({
+              specialtyId,
+            })),
+          }
+        : undefined,
+
+      // Replace ALL services if serviceIds is provided
+      services: (dto as any).serviceIds
+        ? {
+            deleteMany: {},
+            create: (dto as any).serviceIds.map((serviceId: number) => ({
+              serviceId,
+            })),
+          }
+        : undefined,
+    },
+    include: {
+      user: true,
+      specialties: true,
+      services: true,
+    },
+  });
+}
+  
+  
+
+
+
+  async remove(id: number) {
+    await this.findOne(id);
+    return this.prisma.doctor.delete({ where: { id } });
   }
+
+  // ✅ FIX: userId is Int => number
+ async ensureDoctorProfile(userId: number) {
+  const existing = await this.prisma.doctor.findUnique({ where: { userId } });
+  if (existing) return existing;
+
+  return this.prisma.doctor.create({
+    data: {
+      userId,
+      bio: null,
+      isActive: true,
+    },
+  });
+}
+
 }
