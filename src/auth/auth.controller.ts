@@ -1,26 +1,26 @@
-// src/auth/auth.controller.ts
-import { Controller, Get, Req, UseGuards, Query } from '@nestjs/common';
+import { Controller, Get, Query, Req, UseGuards } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
-import { AuthService } from './auth.service';
+import { AuthService } from "./auth.service";
 
 @Controller('auth')
 export class AuthController {
-  constructor(private readonly authService: AuthService) {}
+  constructor(private readonly auth: AuthService) {}
 
-  // Frontend calls: /auth/google?role=DOCTOR or PATIENT
+  // Step 1: redirect to Google
+  // Call: GET /auth/google?role=DOCTOR
   @Get('google')
   @UseGuards(AuthGuard('google'))
   googleLogin(@Query('role') role: string) {
+    // passport handles redirect
     return { message: 'Redirecting to Google...', role };
   }
 
+  // Step 2: Google callback
   @Get('google/callback')
   @UseGuards(AuthGuard('google'))
   async googleCallback(@Req() req: any) {
-    const token = await this.authService.signJwt(req.user);
-    return {
-      token,
-      user: req.user,
-    };
+    // req.user is set by GoogleStrategy.validate()
+    const token = await this.auth.signJwt(req.user);
+    return { token, user: req.user };
   }
 }

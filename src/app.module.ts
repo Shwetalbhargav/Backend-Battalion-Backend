@@ -9,6 +9,7 @@ import { PrismaModule } from './prisma/prisma.module';
 import { PrismaService } from './prisma/prisma.service';
 import { ScheduleRulesModule } from './schedule-rules/schedule-rules.module';
 import { AvailabilitySlotsModule } from './availability-slots/availability-slots.module';
+import { ElasticSchedulingModule } from './elastic-scheduling/elastic-scheduling.module';
 import { AppointmentsModule } from './appointments/appointments.module';
 
 @Controller('health')
@@ -17,8 +18,7 @@ class HealthController {
 
   @Get()
   async health() {
-    await this.prisma.$queryRaw`SELECT 1`;
-    return { status: 'ok' };
+    return { ok: true};
   }
 }
 
@@ -31,14 +31,10 @@ class HealthController {
     UsersModule,
     DoctorModule,
     PatientModule,
-    UsersModule,
     ScheduleRulesModule,
     AvailabilitySlotsModule,
-    AuthModule,
-    ScheduleRulesModule,
-    AvailabilitySlotsModule,
-    AppointmentsModule,
- 
+    AppointmentsModule,    
+    ElasticSchedulingModule,
   ],
   controllers: [HealthController],
 })
