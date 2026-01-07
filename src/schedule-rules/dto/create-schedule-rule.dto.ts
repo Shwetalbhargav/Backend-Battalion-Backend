@@ -1,3 +1,4 @@
+
 import {
   IsBoolean,
   IsEnum,
@@ -16,9 +17,20 @@ export class CreateScheduleRuleDto {
   @IsNotEmpty()
   doctorId: string;
 
+import { IsBoolean, IsEnum, IsInt, IsOptional, Min } from 'class-validator';
+import { Type } from 'class-transformer';
+import { DayOfWeek, MeetingType, TimeOfDay } from '@prisma/client';
+
+export class CreateScheduleRuleDto {
+  @Type(() => Number)
+  @IsInt()
+  doctorId: number;
+
+
   @IsOptional()
-  @IsString()
-  clinicId?: string;
+  @Type(() => Number)
+  @IsInt()
+  clinicId?: number | null;
 
   @IsEnum(MeetingType)
   meetingType: MeetingType;
@@ -29,26 +41,33 @@ export class CreateScheduleRuleDto {
   @IsEnum(TimeOfDay)
   timeOfDay: TimeOfDay;
 
+  @Type(() => Number)
   @IsInt()
   @Min(0)
   startMinute: number; // minutes from midnight
 
+  @Type(() => Number)
   @IsInt()
+
   @Min(1)
   endMinute: number; // minutes from midnight
+
+  @Min(0)
+  endMinute: number;
+
 
   /**
    * STREAM defaults
    */
   @IsOptional()
+  @Type(() => Number)
   @IsInt()
-  @Min(5)
-  slotDurationMin?: number; // default 15
+  slotDurationMin?: number;
 
   @IsOptional()
+  @Type(() => Number)
   @IsInt()
-  @Min(1)
-  capacityPerSlot?: number; // default 1
+  capacityPerSlot?: number;
 
   /**
    * New: STREAM | WAVE

@@ -26,6 +26,7 @@ export class DoctorService {
   }
 
   async create(dto: CreateDoctorDto) {
+
     const userId = this.toIntId(dto.userId, 'userId');
 
     const existing = await this.prisma.doctor.findUnique({
@@ -54,11 +55,38 @@ export class DoctorService {
     const doctorId = this.toIntId(id, 'id');
     const doctor = await this.prisma.doctor.findUnique({
       where: { id: doctorId },
+
+  if (dto.userId === undefined || dto.userId === null) {
+    throw new BadRequestException('userId is required');
+  }
+
+  const existing = await this.prisma.doctor.findUnique({
+    where: { userId: dto.userId },
+  });
+  if (existing) {
+    throw new BadRequestException('Doctor profile already exists for this userId');
+  }
+
+  return this.prisma.doctor.create({
+    data: {
+      userId: dto.userId,
+      bio: (dto as any).bio ?? null,
+      isActive: (dto as any).isActive ?? true,
+    },
+  });
+}
+
+
+  findAll() {
+    return this.prisma.doctor.findMany({
+
       include: { user: true },
+      orderBy: { id: 'asc' },
     });
     if (!doctor) throw new NotFoundException('Doctor not found');
     return doctor;
   }
+
 
   async update(id: number | string, dto: UpdateDoctorDto) {
     await this.findOne(id);
@@ -71,9 +99,17 @@ export class DoctorService {
         isActive: (dto as any).isActive ?? undefined,
         // NOTE: Doctor model has specialties/services as relations; handle via separate endpoints if needed.
       },
+
+  async findOne(id: number) {
+    const doc = await this.prisma.doctor.findUnique({
+      where: { id },
+
       include: { user: true },
     });
+    if (!doc) throw new NotFoundException('Doctor not found');
+    return doc;
   }
+
 
   async remove(id: number | string) {
     await this.findOne(id);
@@ -83,5 +119,68 @@ export class DoctorService {
       where: { id: doctorId },
       include: { user: true },
     });
+
+  
+
+  async update(id: number, dto: UpdateDoctorDto) {
+  await this.findOne(id);
+
+  return this.prisma.doctor.update({
+    where: { id },
+    data: {
+      bio: (dto as any).bio ?? undefined,
+      isActive: (dto as any).isActive ?? undefined,
+
+      // Replace ALL specialties if specialtyIds is provided
+      specialties: (dto as any).specialtyIds
+        ? {
+            deleteMany: {}, // deletes existing DoctorSpecialty rows for this doctor
+            create: (dto as any).specialtyIds.map((specialtyId: number) => ({
+              specialtyId,
+            })),
+          }
+        : undefined,
+
+      // Replace ALL services if serviceIds is provided
+      services: (dto as any).serviceIds
+        ? {
+            deleteMany: {},
+            create: (dto as any).serviceIds.map((serviceId: number) => ({
+              serviceId,
+            })),
+          }
+        : undefined,
+    },
+    include: {
+      user: true,
+      specialties: true,
+      services: true,
+    },
+  });
+}
+  
+  
+
+
+
+  async remove(id: number) {
+    await this.findOne(id);
+    return this.prisma.doctor.delete({ where: { id } });
+
   }
+
+  // ✅ FIX: userId is Int => number
+ async ensureDoctorProfile(userId: number) {
+  const existing = await this.prisma.doctor.findUnique({ where: { userId } });
+  if (existing) return existing;
+
+  return this.prisma.doctor.create({
+    data: {
+      userId,
+      bio: null,
+      isActive: true,
+    },
+  });
+}
+
 }
