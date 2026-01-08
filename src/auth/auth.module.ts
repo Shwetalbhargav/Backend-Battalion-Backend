@@ -1,6 +1,6 @@
 import { Module } from '@nestjs/common';
 import { PassportModule } from '@nestjs/passport';
-import { JwtModule, JwtModuleOptions } from '@nestjs/jwt';
+import { JwtModule } from '@nestjs/jwt';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 
 import { AuthController } from './auth.controller';
@@ -16,28 +16,31 @@ import { PatientModule } from '../patient/patient.module';
   imports: [
     ConfigModule,
     PassportModule,
-    UsersModule,
-    DoctorModule,
-    PatientModule,
     JwtModule.registerAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
+      useFactory: (cfg: ConfigService) => {
+        const secret = cfg.get<string>('JWT_SECRET');
+        if (!secret) throw new Error('JWT_SECRET is missing');
 
-      useFactory: (cfg: ConfigService): JwtModuleOptions => ({
-        secret: cfg.get<string>('JWT_SECRET') ?? 'dev_secret_change_me',
-        signOptions: {
-          // ✅ Cast to satisfy the JwtModuleOptions type
-          expiresIn: (cfg.get<string>('JWT_EXPIRES_IN') ?? '7d') as any,
-        },
+        const expiresIn = cfg.get<string>('JWT_EXPIRES_IN') ?? '7d';
 
-      useFactory: (cfg: ConfigService) => ({
-        secret: cfg.get('JWT_SECRET'),
-        signOptions: { expiresIn: cfg.get('JWT_EXPIRES_IN') ?? '7d' },
-
-      }),
+        return {
+          secret,
+          signOptions: {
+            // Cast needed because some setups type expiresIn as ms.StringValue|number
+            expiresIn: expiresIn as any,
+          },
+        };
+      },
     }),
+
+    UsersModule,
+    DoctorModule,
+    PatientModule,
   ],
   controllers: [AuthController],
   providers: [AuthService, GoogleStrategy, JwtStrategy],
+  exports: [AuthService],
 })
 export class AuthModule {}

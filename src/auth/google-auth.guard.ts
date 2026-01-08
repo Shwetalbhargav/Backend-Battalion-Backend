@@ -1,4 +1,3 @@
-// src/auth/google-auth.guard.ts
 import { ExecutionContext, Injectable } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 
@@ -10,7 +9,7 @@ export class GoogleAuthGuard extends AuthGuard('google') {
 
     return {
       scope: ['email', 'profile'],
-      state: role, // ✅ comes back on callback as req.query.state
+      state: role, // comes back as req.query.state in callback
     };
   }
 }
