@@ -1,96 +1,122 @@
-import { Body, Controller, Delete, Get, Param, ParseIntPipe, Patch, Post, Query } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  ParseIntPipe,
+  Patch,
+  Post,
+  Query,
+} from '@nestjs/common';
 import { ScheduleRulesService } from './schedule-rules.service';
-import { CreateScheduleRuleDto } from './dto/create-schedule-rule.dto';
-import { BulkScheduleRulesDto } from './dto/bulk-schedule-rules.dto';
-import { UpdateScheduleRuleDto } from './dto/update-schedule-rule.dto';
 
-// NEW DTOs (you’ll create these)
+import { CreateScheduleRuleDto } from './dto/create-schedule-rule.dto';
+import { UpdateScheduleRuleDto } from './dto/update-schedule-rule.dto';
+import { BulkScheduleRulesDto } from './dto/bulk-schedule-rules.dto';
+
 import { GenerateSlotsRangeDto } from './dto/generate-slots-range.dto';
 import { UpsertDayOverrideDto } from './dto/upsert-day-override.dto';
 import { UpsertSessionOverrideDto } from './dto/upsert-session-override.dto';
 
-
 @Controller('schedule-rules')
 export class ScheduleRulesController {
-  constructor(private readonly scheduleRulesService: ScheduleRulesService) { }
+  constructor(private readonly scheduleRulesService: ScheduleRulesService) {}
 
+  /**
+   * Create a single schedule rule
+   */
   @Post()
   create(@Body() dto: CreateScheduleRuleDto) {
     return this.scheduleRulesService.create(dto);
   }
 
-  // Optional filter: /api/v1/schedule-rules?doctorId=1
+  /**
+   * List schedule rules
+   * GET /schedule-rules?doctorId=1&clinicId=2&meetingType=ONLINE
+   */
   @Get()
-
-  list(@Query('doctorId') doctorId: string) {
-    return this.service.listByDoctor(doctorId);
+  findAll(
+    @Query('doctorId') doctorId?: string,
+    @Query('clinicId') clinicId?: string,
+    @Query('meetingType') meetingType?: string,
+  ) {
+    return this.scheduleRulesService.findAll({
+      doctorId,
+      clinicId,
+      meetingType,
+    });
   }
 
   /**
-   * Creates default STREAM rules (MON-SAT, morning/evening)
-   * POST /api/v1/schedule-rules/bulk-defaults/:doctorId
-   * body: { "clinicId"?: number|string }
+   * Get one rule by id
    */
-  @Post('bulk-defaults/:doctorId')
-  bulkDefaults(
-    @Param('doctorId') doctorId: string,
-    @Body() body: { clinicId?: number | string },
-  ) {
-    return this.service.bulkCreateDefaults(doctorId, body?.clinicId);
-
-  findAll(@Query('doctorId') doctorId?: string) {
-    return this.scheduleRulesService.findAll(doctorId);
-  }
-
   @Get(':id')
   findOne(@Param('id', ParseIntPipe) id: number) {
     return this.scheduleRulesService.findOne(id);
   }
 
+  /**
+   * Update rule by id
+   */
   @Patch(':id')
-  update(@Param('id', ParseIntPipe) id: number, @Body() dto: UpdateScheduleRuleDto) {
+  update(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: UpdateScheduleRuleDto,
+  ) {
     return this.scheduleRulesService.update(id, dto);
   }
 
+  /**
+   * Delete rule by id
+   */
   @Delete(':id')
   remove(@Param('id', ParseIntPipe) id: number) {
     return this.scheduleRulesService.remove(id);
   }
 
   /**
-   * NEW: bulk generate sessions/slots for date range (1–3 months typical)
-   * POST /api/v1/schedule-rules/generate
+   * Bulk create default rules (no slot generation)
+   * POST /schedule-rules/bulk-defaults
    */
-  @Post('generate')
-  generate(@Body() dto: GenerateSlotsRangeDto) {
-    return this.scheduleRulesService.generateSlots(dto);
+  @Post('bulk-defaults')
+  bulkCreateDefaults(@Body() dto: BulkScheduleRulesDto) {
+    return this.scheduleRulesService.bulkCreateDefaultRules(dto);
   }
 
   /**
-   * NEW: close/open whole day (holiday, leave, etc.)
-   * PUT /api/v1/schedule-rules/overrides/day
+   * Bulk create rules and generate availability slots in one request
+   * POST /schedule-rules/bulk
    */
-  @Post('overrides/day')
+  @Post('bulk')
+  bulkCreateAndGenerate(@Body() dto: BulkScheduleRulesDto) {
+    return this.scheduleRulesService.bulkCreateAndGenerate(dto);
+  }
+
+  /**
+   * Generate slots for a doctor in a date range
+   * POST /schedule-rules/generate-slots
+   */
+  @Post('generate-slots')
+  generateSlots(@Body() dto: GenerateSlotsRangeDto) {
+    return this.scheduleRulesService.generateSlotsForRange(dto);
+  }
+
+  /**
+   * Upsert a day override
+   * POST /schedule-rules/day-override
+   */
+  @Post('day-override')
   upsertDayOverride(@Body() dto: UpsertDayOverrideDto) {
     return this.scheduleRulesService.upsertDayOverride(dto);
   }
 
   /**
-   * NEW: close/edit one session on one day (e.g. only morning off)
-   * PUT /api/v1/schedule-rules/overrides/session
+   * Upsert a session override
+   * POST /schedule-rules/session-override
    */
-  @Post('overrides/session')
+  @Post('session-override')
   upsertSessionOverride(@Body() dto: UpsertSessionOverrideDto) {
     return this.scheduleRulesService.upsertSessionOverride(dto);
-
-  }
-
-  /**
-   * Bulk create rules and generate availability slots in one request
-   * POST /api/v1/schedule-rules/bulk
-   */
-  @Post('bulk')
-  bulkCreateAndGenerate(@Body() dto: BulkScheduleRulesDto) {
-    return this.service.bulkCreateAndGenerate(dto);
   }
 }

@@ -1,56 +1,69 @@
-
-import { BadRequestException, Injectable } from '@nestjs/common';
 import {
-  Prisma,
-  MeetingType,
-  SchedulingStrategy,
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
+import {
   DayOfWeek,
+  MeetingType,
+  Prisma,
+  SchedulingStrategy,
   TimeOfDay,
 } from '@prisma/client';
-import { PrismaService } from '../prisma/prisma.service';
 import { AvailabilitySlotsService } from '../availability-slots/availability-slots.service';
-import { CreateScheduleRuleDto } from './dto/create-schedule-rule.dto';
+import { PrismaService } from '../prisma/prisma.service';
+
 import { BulkScheduleRulesDto } from './dto/bulk-schedule-rules.dto';
-import { UpdateScheduleRuleDto } from './dto/update-schedule-rule.dto';
+import { CreateScheduleRuleDto } from './dto/create-schedule-rule.dto';
 import { GenerateSlotsRangeDto } from './dto/generate-slots-range.dto';
+import { UpdateScheduleRuleDto } from './dto/update-schedule-rule.dto';
 import { UpsertDayOverrideDto } from './dto/upsert-day-override.dto';
 import { UpsertSessionOverrideDto } from './dto/upsert-session-override.dto';
 
-// If you already have AvailabilitySlotsService, inject it and call it here.
-// import { AvailabilitySlotsService } from '../availability-slots/availability-slots.service';
+type FindAllQuery = {
+  doctorId?: string;
+  clinicId?: string;
+  meetingType?: string;
+};
 
-
-import { GenerateSlotsRangeDto } from "./dto/generate-slots-range.dto";
-import { UpsertDayOverrideDto } from './dto/upsert-day-override.dto';
-import { UpsertSessionOverrideDto } from './dto/upsert-session-override.dto';
-
-// If you already have AvailabilitySlotsService, inject it and call it here.
-// import { AvailabilitySlotsService } from '../availability-slots/availability-slots.service';
-
+type BulkSessionLike = {
+  timeOfDay?: TimeOfDay;
+  startMinute?: number;
+  endMinute?: number;
+  startTime?: string; // HH:mm
+  endTime?: string; // HH:mm
+};
 
 @Injectable()
 export class ScheduleRulesService {
   constructor(
     private readonly prisma: PrismaService,
-
     private readonly availabilitySlotsService: AvailabilitySlotsService,
   ) {}
 
-  private toIntId(value: any, field: string): number {
-    const n = typeof value === 'string' ? Number(value) : value;
-    if (!Number.isInteger(n) || n <= 0) throw new BadRequestException(`${field} must be a positive integer`);
+  // -----------------------
+  // helpers
+  // -----------------------
+
+  private toIntId(value: unknown, field: string): number {
+    const n = typeof value === 'number' ? value : Number(value);
+    if (!Number.isInteger(n) || n <= 0) {
+      throw new BadRequestException(`${field} must be a positive integer`);
+    }
     return n;
   }
 
-  private toNullableIntId(value: any, field: string): number | null {
+  private toNullableIntId(value: unknown, field: string): number | null {
     if (value === undefined || value === null || value === '') return null;
     return this.toIntId(value, field);
   }
 
-  private validateWindow(startMinute: number, endMinute: number) {
-    if (startMinute < 0 || startMinute > 1440) throw new BadRequestException('startMinute must be 0..1440');
-    if (endMinute < 0 || endMinute > 1440) throw new BadRequestException('endMinute must be 0..1440');
-    if (endMinute <= startMinute) throw new BadRequestException('endMinute must be > startMinute');
+  private toBool(value: unknown, fallback: boolean): boolean {
+    if (value === undefined || value === null) return fallback;
+    if (typeof value === 'boolean') return value;
+    if (value === 'true') return true;
+    if (value === 'false') return false;
+    return fallback;
   }
 
   private hhmmToMinutes(value: string, field: string): number {
@@ -59,7 +72,23 @@ export class ScheduleRulesService {
     return Number(m[1]) * 60 + Number(m[2]);
   }
 
-  private normalizeStrategy(strategy?: SchedulingStrategy) {
+  private validateWindow(startMinute: number, endMinute: number): void {
+    if (
+      !Number.isInteger(startMinute) ||
+      startMinute < 0 ||
+      startMinute > 1440
+    ) {
+      throw new BadRequestException('startMinute must be an integer 0..1440');
+    }
+    if (!Number.isInteger(endMinute) || endMinute < 0 || endMinute > 1440) {
+      throw new BadRequestException('endMinute must be an integer 0..1440');
+    }
+    if (endMinute <= startMinute) {
+      throw new BadRequestException('endMinute must be > startMinute');
+    }
+  }
+
+  private normalizeStrategy(strategy?: SchedulingStrategy): SchedulingStrategy {
     return strategy ?? SchedulingStrategy.STREAM;
   }
 
@@ -70,303 +99,168 @@ export class ScheduleRulesService {
     waveEveryMin?: number;
     waveCapacity?: number;
     wavePattern?: unknown;
-  }) {
+  }): void {
     const strategy = this.normalizeStrategy(input.strategy);
 
-    if (strategy === SchedulingStrategy.STREAM) {
-      // STREAM is fine with defaults
-      return;
-    }
+    const slotDurationMin = input.slotDurationMin ?? 15;
+    const capacityPerSlot = input.capacityPerSlot ?? 1;
 
-    // WAVE must have either (waveEveryMin + waveCapacity) OR wavePattern
-    const hasPattern = input.wavePattern !== undefined && input.wavePattern !== null;
-    const hasSimple = input.waveEveryMin !== undefined && input.waveCapacity !== undefined;
-
-    if (!hasPattern && !hasSimple) {
+    if (!Number.isInteger(slotDurationMin) || slotDurationMin <= 0) {
       throw new BadRequestException(
-        'WAVE strategy requires either (waveEveryMin + waveCapacity) OR wavePattern',
+        'slotDurationMin must be a positive integer',
+      );
+    }
+    if (!Number.isInteger(capacityPerSlot) || capacityPerSlot <= 0) {
+      throw new BadRequestException(
+        'capacityPerSlot must be a positive integer',
       );
     }
 
-    if (hasSimple) {
-      if ((input.waveEveryMin ?? 0) < 5) throw new BadRequestException('waveEveryMin must be >= 5');
-      if ((input.waveCapacity ?? 0) < 1) throw new BadRequestException('waveCapacity must be >= 1');
-    }
+    if (strategy === SchedulingStrategy.WAVE) {
+      const waveEveryMin = input.waveEveryMin ?? 15;
+      const waveCapacity = input.waveCapacity ?? capacityPerSlot;
 
-    if (hasPattern) {
-      if (typeof input.wavePattern !== 'object') {
-        throw new BadRequestException('wavePattern must be a JSON object/array');
+      if (!Number.isInteger(waveEveryMin) || waveEveryMin <= 0) {
+        throw new BadRequestException(
+          'waveEveryMin must be a positive integer',
+        );
       }
+      if (!Number.isInteger(waveCapacity) || waveCapacity <= 0) {
+        throw new BadRequestException(
+          'waveCapacity must be a positive integer',
+        );
+      }
+      // wavePattern can be JSON; leave validation to DTO or DB if needed
     }
   }
 
-  async create(dto: CreateScheduleRuleDto) {
-    const doctorId = this.toIntId(dto.doctorId, 'doctorId');
-    const clinicId = this.toNullableIntId(dto.clinicId, 'clinicId');
-
-    this.validateWindow(dto.startMinute, dto.endMinute);
-
-    if (dto.meetingType === MeetingType.OFFLINE && !clinicId) {
-      throw new BadRequestException('clinicId is required for OFFLINE schedule rule');
-    }
-
-    const strategy = this.normalizeStrategy(dto.strategy);
-
-    this.validateStrategyOrThrow({
-      strategy,
-      slotDurationMin: dto.slotDurationMin,
-      capacityPerSlot: dto.capacityPerSlot,
-      waveEveryMin: dto.waveEveryMin,
-      waveCapacity: dto.waveCapacity,
-      wavePattern: dto.wavePattern,
-
-    // private readonly availabilitySlotsService: AvailabilitySlotsService,
-  ) {}
-
-  private toInt(value: unknown, field: string): number {
-    const n = typeof value === 'number' ? value : Number(value);
-    if (!Number.isInteger(n) || n <= 0) {
-      throw new BadRequestException(`${field} must be a positive integer`);
-    }
-    return n;
+  private parseDateOrThrow(value: string, field: string): Date {
+    const d = new Date(value);
+    if (Number.isNaN(d.getTime()))
+      throw new BadRequestException(`${field} must be a valid ISO date`);
+    return d;
   }
 
+  private normalizeSessionWindow(session: BulkSessionLike): {
+    startMinute: number;
+    endMinute: number;
+    timeOfDay?: TimeOfDay;
+  } {
+    const startMinute =
+      typeof session.startMinute === 'number'
+        ? session.startMinute
+        : typeof session.startTime === 'string'
+          ? this.hhmmToMinutes(session.startTime, 'startTime')
+          : Number.NaN;
+
+    const endMinute =
+      typeof session.endMinute === 'number'
+        ? session.endMinute
+        : typeof session.endTime === 'string'
+          ? this.hhmmToMinutes(session.endTime, 'endTime')
+          : Number.NaN;
+
+    if (!Number.isInteger(startMinute) || !Number.isInteger(endMinute)) {
+      throw new BadRequestException(
+        'Each session must include startMinute/endMinute or startTime/endTime',
+      );
+    }
+
+    this.validateWindow(startMinute, endMinute);
+
+    return { startMinute, endMinute, timeOfDay: session.timeOfDay };
+  }
+
+  // -----------------------
+  // CRUD
+  // -----------------------
+
   async create(dto: CreateScheduleRuleDto) {
-    const doctorId = this.toInt(dto.doctorId, 'doctorId');
+    const doctorId = this.toIntId(
+      (dto as unknown as { doctorId: unknown }).doctorId,
+      'doctorId',
+    );
 
-
-    // (Optional) validate doctor exists
-
-    const doctor = await this.prisma.doctor.findUnique({ where: { id: doctorId } });
-    if (!doctor) throw new BadRequestException(`doctorId ${doctorId} not found`);
-
-    return this.prisma.doctorScheduleRule.create({
-      data: {
-        doctorId,
-        clinicId: dto.clinicId ?? null,
-        meetingType: dto.meetingType,
-        dayOfWeek: dto.dayOfWeek,
-        timeOfDay: dto.timeOfDay,
-        startMinute: dto.startMinute,
-        endMinute: dto.endMinute,
-        slotDurationMin: dto.slotDurationMin ?? 15,
-        capacityPerSlot: dto.capacityPerSlot ?? 1,
-        isActive: dto.isActive ?? true,
-      },
-
+    const doctor = await this.prisma.doctor.findUnique({
+      where: { id: doctorId },
     });
+    if (!doctor)
+      throw new BadRequestException(`doctorId ${doctorId} not found`);
 
-    // Build data object without sending JSON nulls unless needed
     const data: Prisma.DoctorScheduleRuleCreateInput = {
       doctor: { connect: { id: doctorId } },
-      ...(clinicId ? { clinic: { connect: { id: clinicId } } } : {}),
-      meetingType: dto.meetingType,
-      dayOfWeek: dto.dayOfWeek,
-      timeOfDay: dto.timeOfDay,
-      startMinute: dto.startMinute,
-      endMinute: dto.endMinute,
-      slotDurationMin: dto.slotDurationMin ?? 15,
-      capacityPerSlot: dto.capacityPerSlot ?? 1,
-      isActive: dto.isActive ?? true,
-      strategy,
+      clinicId:
+        (dto as unknown as { clinicId?: number | null }).clinicId ?? null,
+      meetingType: (dto as unknown as { meetingType: MeetingType }).meetingType,
+      dayOfWeek: (dto as unknown as { dayOfWeek: DayOfWeek }).dayOfWeek,
+      timeOfDay: (dto as unknown as { timeOfDay: TimeOfDay }).timeOfDay,
+      startMinute: (dto as unknown as { startMinute: number }).startMinute,
+      endMinute: (dto as unknown as { endMinute: number }).endMinute,
+      slotDurationMin:
+        (dto as unknown as { slotDurationMin?: number }).slotDurationMin ?? 15,
+      capacityPerSlot:
+        (dto as unknown as { capacityPerSlot?: number }).capacityPerSlot ?? 1,
+      isActive: (dto as unknown as { isActive?: boolean }).isActive ?? true,
+      strategy: this.normalizeStrategy(
+        (dto as unknown as { strategy?: SchedulingStrategy }).strategy,
+      ),
+      waveEveryMin:
+        (dto as unknown as { waveEveryMin?: number | null }).waveEveryMin ??
+        null,
+      waveCapacity:
+        (dto as unknown as { waveCapacity?: number | null }).waveCapacity ??
+        null,
+      wavePattern:
+        (dto as unknown as { wavePattern?: unknown }).wavePattern !== undefined
+          ? ((dto as unknown as { wavePattern?: unknown })
+              .wavePattern as Prisma.InputJsonValue)
+          : Prisma.JsonNull,
+      locationKey:
+        (dto as unknown as { locationKey?: string | null }).locationKey ?? null,
     };
 
-    if (strategy === SchedulingStrategy.WAVE) {
-      if (dto.waveEveryMin !== undefined) (data as any).waveEveryMin = dto.waveEveryMin;
-      if (dto.waveCapacity !== undefined) (data as any).waveCapacity = dto.waveCapacity;
-      if (dto.wavePattern !== undefined) (data as any).wavePattern = dto.wavePattern as any;
+    this.validateWindow(data.startMinute, data.endMinute);
+    this.validateStrategyOrThrow({
+      strategy: data.strategy,
+      slotDurationMin: data.slotDurationMin,
+      capacityPerSlot: data.capacityPerSlot,
+      waveEveryMin: data.waveEveryMin ?? undefined,
+      waveCapacity: data.waveCapacity ?? undefined,
+      wavePattern: data.wavePattern,
+    });
+
+    if (data.meetingType === MeetingType.OFFLINE && !data.clinicId) {
+      throw new BadRequestException(
+        'clinicId is required for OFFLINE schedule rule',
+      );
     }
 
     return this.prisma.doctorScheduleRule.create({ data });
   }
 
+  async findAll(query: FindAllQuery) {
+    const doctorId = query.doctorId
+      ? this.toIntId(query.doctorId, 'doctorId')
+      : undefined;
+    const clinicId = query.clinicId
+      ? this.toIntId(query.clinicId, 'clinicId')
+      : undefined;
+    const meetingType = query.meetingType as MeetingType | undefined;
 
-  /**
-   * Creates defaults: MON-SAT
-   * MORNING 09:00-12:00, EVENING 18:00-22:00
-   * STREAM strategy (no wave fields included)
-   */
-  async bulkCreateDefaults(doctorIdRaw: string, clinicIdRaw?: number | string) {
-    const doctorId = this.toIntId(doctorIdRaw, 'doctorId');
-    const clinicId = this.toNullableIntId(clinicIdRaw, 'clinicId');
-
-    const days: DayOfWeek[] = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
-
-    // IMPORTANT: typed array avoids never[]
-    const defaultRules: Prisma.DoctorScheduleRuleCreateManyInput[] = [];
-
-    for (const d of days) {
-      defaultRules.push(
-        {
-          doctorId,
-          clinicId,
-          meetingType: MeetingType.ONLINE,
-          dayOfWeek: d,
-          timeOfDay: 'MORNING' as TimeOfDay,
-          startMinute: 9 * 60,
-          endMinute: 12 * 60,
-          slotDurationMin: 15,
-          capacityPerSlot: 1,
-          isActive: true,
-          strategy: SchedulingStrategy.STREAM,
-          // waveEveryMin / waveCapacity / wavePattern omitted ✅
-        },
-        {
-          doctorId,
-          clinicId,
-          meetingType: MeetingType.ONLINE,
-          dayOfWeek: d,
-          timeOfDay: 'EVENING' as TimeOfDay,
-          startMinute: 18 * 60,
-          endMinute: 22 * 60,
-          slotDurationMin: 15,
-          capacityPerSlot: 1,
-          isActive: true,
-          strategy: SchedulingStrategy.STREAM,
-          // waveEveryMin / waveCapacity / wavePattern omitted ✅
-        },
-      );
-    }
-
-    const result = await this.prisma.doctorScheduleRule.createMany({
-      data: defaultRules,
-      skipDuplicates: true,
-
-  async findAll(doctorId?: string) {
-    const where = doctorId ? { doctorId: this.toInt(doctorId, 'doctorId') } : {};
     return this.prisma.doctorScheduleRule.findMany({
-      where,
-
-      orderBy: [{ doctorId: 'asc' }, { dayOfWeek: 'asc' }, { timeOfDay: 'asc' }, { startMinute: 'asc' }],
-
-      orderBy: [
-        { doctorId: 'asc' },
-        { dayOfWeek: 'asc' },
-        { timeOfDay: 'asc' },
-        { startMinute: 'asc' },
-      ],
-
-
-    });
-
-    return { created: result.count };
-  }
-
-
-  /**
-   * Bulk create rules AND generate slots in one go
-   */
-  async bulkCreateAndGenerate(dto: BulkScheduleRulesDto) {
-    const doctorId = this.toIntId(dto.doctorId, 'doctorId');
-    const clinicId = this.toNullableIntId(dto.clinicId, 'clinicId');
-
-    if (dto.meetingType === MeetingType.OFFLINE && !clinicId) {
-      throw new BadRequestException('clinicId is required for OFFLINE bulk rules');
-    }
-
-    const strategy = this.normalizeStrategy(dto.strategy);
-
-    this.validateStrategyOrThrow({
-      strategy,
-      slotDurationMin: dto.slotDurationMin,
-      capacityPerSlot: dto.capacityPerSlot,
-      waveEveryMin: dto.waveEveryMin,
-      waveCapacity: dto.waveCapacity,
-      wavePattern: dto.wavePattern,
-    });
-
-    // Build rule records
-    const records: Prisma.DoctorScheduleRuleCreateManyInput[] = [];
-
-    for (const day of dto.daysOfWeek) {
-      for (const s of dto.sessions) {
-        const startMinute = this.hhmmToMinutes(s.startTime, 'sessions.startTime');
-        const endMinute = this.hhmmToMinutes(s.endTime, 'sessions.endTime');
-        this.validateWindow(startMinute, endMinute);
-
-        const base: Prisma.DoctorScheduleRuleCreateManyInput = {
-          doctorId,
-          clinicId,
-          meetingType: dto.meetingType,
-          dayOfWeek: day,
-          timeOfDay: s.timeOfDay,
-          startMinute,
-          endMinute,
-          slotDurationMin: dto.slotDurationMin ?? 15,
-          capacityPerSlot: dto.capacityPerSlot ?? 1,
-          isActive: dto.isActive ?? true,
-          strategy,
-        };
-
-        if (strategy === SchedulingStrategy.WAVE) {
-          if (dto.waveEveryMin !== undefined) (base as any).waveEveryMin = dto.waveEveryMin;
-          if (dto.waveCapacity !== undefined) (base as any).waveCapacity = dto.waveCapacity;
-          if (dto.wavePattern !== undefined) (base as any).wavePattern = dto.wavePattern as any;
-        }
-
-        records.push(base);
-      }
-    }
-
-    // Upsert loop keeps rules aligned.
-    // NOTE: This compound unique name must match your schema @@unique(...)
-    let rulesUpserted = 0;
-
-    for (const r of records) {
-      await this.prisma.doctorScheduleRule.upsert({
-        where: {
-          doctorId_meetingType_dayOfWeek_timeOfDay_startMinute_endMinute: {
-            doctorId: r.doctorId,
-            meetingType: r.meetingType,
-            dayOfWeek: r.dayOfWeek,
-            timeOfDay: r.timeOfDay,
-            startMinute: r.startMinute,
-            endMinute: r.endMinute,
-          },
-        } as any,
-        update: {
-          clinicId: r.clinicId,
-          slotDurationMin: r.slotDurationMin,
-          capacityPerSlot: r.capacityPerSlot,
-          isActive: r.isActive,
-          strategy: r.strategy,
-
-          // clear wave fields if switching to STREAM
-          waveEveryMin: r.strategy === SchedulingStrategy.WAVE ? (r as any).waveEveryMin ?? null : null,
-          waveCapacity: r.strategy === SchedulingStrategy.WAVE ? (r as any).waveCapacity ?? null : null,
-          wavePattern:
-            r.strategy === SchedulingStrategy.WAVE
-              ? ((r as any).wavePattern ?? Prisma.JsonNull)
-              : Prisma.JsonNull,
-        } as any,
-        create: r as any,
-      });
-
-      rulesUpserted++;
-    }
-
-    const gen = await this.availabilitySlotsService.generateSlots(
-      String(doctorId),
-      dto.dateFrom,
-      dto.dateTo,
-    );
-
-    return {
-      rulesUpserted,
-      slotsCreated: (gen as any)?.created ?? 0,
-      range: { dateFrom: dto.dateFrom, dateTo: dto.dateTo },
-      strategy,
-    };
-  }
-
-  async listByDoctor(doctorIdRaw: string) {
-    const doctorId = this.toIntId(doctorIdRaw, 'doctorId');
-    return this.prisma.doctorScheduleRule.findMany({
-      where: { doctorId, isActive: true },
+      where: {
+        ...(doctorId ? { doctorId } : {}),
+        ...(clinicId !== undefined ? { clinicId } : {}),
+        ...(meetingType ? { meetingType } : {}),
+      },
       orderBy: [{ dayOfWeek: 'asc' }, { startMinute: 'asc' }],
+    });
+  }
 
   async findOne(id: number) {
-    const rule = await this.prisma.doctorScheduleRule.findUnique({ where: { id } });
+    const rule = await this.prisma.doctorScheduleRule.findUnique({
+      where: { id },
+    });
     if (!rule) throw new NotFoundException(`Schedule rule ${id} not found`);
     return rule;
   }
@@ -374,195 +268,361 @@ export class ScheduleRulesService {
   async update(id: number, dto: UpdateScheduleRuleDto) {
     await this.findOne(id);
 
+    const startMinute = (dto as unknown as { startMinute?: number })
+      .startMinute;
+    const endMinute = (dto as unknown as { endMinute?: number }).endMinute;
+    if (startMinute !== undefined && endMinute !== undefined) {
+      this.validateWindow(startMinute, endMinute);
+    }
+
+    const strategy = (dto as unknown as { strategy?: SchedulingStrategy })
+      .strategy;
+    if (strategy !== undefined) {
+      this.validateStrategyOrThrow({
+        strategy,
+        slotDurationMin: (dto as unknown as { slotDurationMin?: number })
+          .slotDurationMin,
+        capacityPerSlot: (dto as unknown as { capacityPerSlot?: number })
+          .capacityPerSlot,
+        waveEveryMin: (dto as unknown as { waveEveryMin?: number })
+          .waveEveryMin,
+        waveCapacity: (dto as unknown as { waveCapacity?: number })
+          .waveCapacity,
+        wavePattern: (dto as unknown as { wavePattern?: unknown }).wavePattern,
+      });
+    }
+
     return this.prisma.doctorScheduleRule.update({
       where: { id },
       data: {
-        clinicId: dto.clinicId ?? undefined,
-        meetingType: dto.meetingType ?? undefined,
-        dayOfWeek: dto.dayOfWeek ?? undefined,
-        timeOfDay: dto.timeOfDay ?? undefined,
-        startMinute: dto.startMinute ?? undefined,
-        endMinute: dto.endMinute ?? undefined,
-        slotDurationMin: dto.slotDurationMin ?? undefined,
-        capacityPerSlot: dto.capacityPerSlot ?? undefined,
-        isActive: dto.isActive ?? undefined,
-      },
+        ...dto,
+        wavePattern:
+          (dto as unknown as { wavePattern?: unknown }).wavePattern !==
+          undefined
+            ? ((dto as unknown as { wavePattern?: unknown })
+                .wavePattern as Prisma.InputJsonValue)
+            : undefined,
+      } as Prisma.DoctorScheduleRuleUpdateInput,
     });
   }
-
-
-    if (!rule) throw new NotFoundException(`Schedule rule ${ruleId} not found`);
-    return rule;
-  }
-
-  async update(id: string, dto: UpdateScheduleRuleDto) {
-    const ruleId = this.toInt(id, 'id');
-    await this.findOne(String(ruleId));
-
-    return this.prisma.doctorScheduleRule.update({
-      where: { id: ruleId },
-      data: {
-        clinicId: dto.clinicId ?? undefined,
-        meetingType: dto.meetingType ?? undefined,
-        dayOfWeek: dto.dayOfWeek ?? undefined,
-        timeOfDay: dto.timeOfDay ?? undefined,
-        startMinute: dto.startMinute ?? undefined,
-        endMinute: dto.endMinute ?? undefined,
-        slotDurationMin: dto.slotDurationMin ?? undefined,
-        capacityPerSlot: dto.capacityPerSlot ?? undefined,
-        isActive: dto.isActive ?? undefined,
-      },
-    });
-  }
-
-  async remove(id: string) {
-    const ruleId = this.toInt(id, 'id');
-    await this.findOne(String(ruleId));
-    return this.prisma.doctorScheduleRule.delete({ where: { id: ruleId } });
-  }
-
-  /**
-   * NEW: bulk generate sessions/slots between dateFrom and dateTo.
-   * Typical UX: dateFrom = today, monthsAhead = 1..3 => dateTo auto-computed in controller/DTO layer.
-   */
-  async generateSlots(dto: GenerateSlotsRangeDto) {
-    const doctorId = this.toInt(dto.doctorId, 'doctorId');
-
-    // You can normalize dates (recommend start-of-day) in one place.
-    const dateFrom = new Date(dto.dateFrom);
-    const dateTo = new Date(dto.dateTo);
-    if (Number.isNaN(dateFrom.getTime()) || Number.isNaN(dateTo.getTime())) {
-      throw new BadRequestException('dateFrom/dateTo must be valid ISO dates');
-    }
-    if (dateTo <= dateFrom) throw new BadRequestException('dateTo must be after dateFrom');
-
-    // Option A (recommended): call your existing slot generator logic here
-    // return this.availabilitySlotsService.generateSlots(doctorId, dto.dateFrom, dto.dateTo);
-
-    // Option B: if you don’t want a cross-module dependency,
-    // keep this as a “thin facade” for now and implement generation elsewhere.
-    return {
-      message: 'Hook up to AvailabilitySlotsService.generateSlots(doctorId, dateFrom, dateTo)',
-      doctorId,
-      dateFrom: dto.dateFrom,
-      dateTo: dto.dateTo,
-    };
-  }
-
-  async upsertDayOverride(dto: UpsertDayOverrideDto) {
-    const doctorId = this.toInt(dto.doctorId, 'doctorId');
-    const date = new Date(dto.date);
-    if (Number.isNaN(date.getTime())) throw new BadRequestException('date must be valid ISO date');
-
-    return this.prisma.doctorDayOverride.upsert({
-      where: { doctorId_date: { doctorId, date } },
-      create: {
-        doctorId,
-        date,
-        isClosed: dto.isClosed ?? true,
-        note: dto.note ?? null,
-      },
-      update: {
-        isClosed: dto.isClosed ?? true,
-        note: dto.note ?? null,
-      },
-    });
-  }
-
 
   async remove(id: number) {
     await this.findOne(id);
-    return this.prisma.doctorScheduleRule.delete({ where: { id } });
+    await this.prisma.doctorScheduleRule.delete({ where: { id } });
+    return { deleted: true };
   }
 
-  /**
-   * Bulk generate sessions/slots between dateFrom and dateTo.
-   * You can wire this to AvailabilitySlotsService.generateSlots().
-   */
-  async generateSlots(dto: GenerateSlotsRangeDto) {
-    const doctorId = this.toInt(dto.doctorId, 'doctorId');
+  // -----------------------
+  // Bulk
+  // -----------------------
 
-    const dateFrom = new Date(dto.dateFrom);
-    const dateTo = new Date(dto.dateTo);
+  async bulkCreateDefaultRules(dto: BulkScheduleRulesDto) {
+    const doctorId = this.toIntId(
+      (dto as unknown as { doctorId: unknown }).doctorId,
+      'doctorId',
+    );
+    const clinicId = this.toNullableIntId(
+      (dto as unknown as { clinicId?: unknown }).clinicId,
+      'clinicId',
+    );
+    const meetingType = (dto as unknown as { meetingType: MeetingType })
+      .meetingType;
 
-    if (Number.isNaN(dateFrom.getTime()) || Number.isNaN(dateTo.getTime())) {
-      throw new BadRequestException('dateFrom/dateTo must be valid ISO dates');
+    if (meetingType === MeetingType.OFFLINE && !clinicId) {
+      throw new BadRequestException(
+        'clinicId is required for OFFLINE bulk rules',
+      );
     }
-    if (dateTo <= dateFrom) {
+
+    const strategy = this.normalizeStrategy(
+      (dto as unknown as { strategy?: SchedulingStrategy }).strategy,
+    );
+
+    this.validateStrategyOrThrow({
+      strategy,
+      slotDurationMin: (dto as unknown as { slotDurationMin?: number })
+        .slotDurationMin,
+      capacityPerSlot: (dto as unknown as { capacityPerSlot?: number })
+        .capacityPerSlot,
+      waveEveryMin: (dto as unknown as { waveEveryMin?: number }).waveEveryMin,
+      waveCapacity: (dto as unknown as { waveCapacity?: number }).waveCapacity,
+      wavePattern: (dto as unknown as { wavePattern?: unknown }).wavePattern,
+    });
+
+    const daysOfWeek = (dto as unknown as { daysOfWeek: DayOfWeek[] })
+      .daysOfWeek;
+    const sessions = (dto as unknown as { sessions: BulkSessionLike[] })
+      .sessions;
+
+    if (!Array.isArray(daysOfWeek) || daysOfWeek.length === 0) {
+      throw new BadRequestException('daysOfWeek must be a non-empty array');
+    }
+    if (!Array.isArray(sessions) || sessions.length === 0) {
+      throw new BadRequestException('sessions must be a non-empty array');
+    }
+
+    const slotDurationMin =
+      (dto as unknown as { slotDurationMin?: number }).slotDurationMin ?? 15;
+    const capacityPerSlot =
+      (dto as unknown as { capacityPerSlot?: number }).capacityPerSlot ?? 1;
+
+    let upserted = 0;
+
+    for (const dayOfWeek of daysOfWeek) {
+      for (const s of sessions) {
+        const { startMinute, endMinute, timeOfDay } =
+          this.normalizeSessionWindow(s);
+
+        const inferredTimeOfDay: TimeOfDay =
+          timeOfDay ??
+          (startMinute < 12 * 60
+            ? TimeOfDay.MORNING
+            : startMinute < 17 * 60
+              ? TimeOfDay.AFTERNOON
+              : TimeOfDay.EVENING);
+
+        const existing = await this.prisma.doctorScheduleRule.findFirst({
+          where: {
+            doctorId,
+            clinicId,
+            meetingType,
+            dayOfWeek,
+            timeOfDay: inferredTimeOfDay,
+            startMinute,
+            endMinute,
+          },
+        });
+
+        const isActive = this.toBool(
+          (dto as unknown as { isActive?: unknown }).isActive,
+          true,
+        );
+
+        if (existing) {
+          await this.prisma.doctorScheduleRule.update({
+            where: { id: existing.id },
+            data: {
+              isActive,
+              slotDurationMin,
+              capacityPerSlot,
+              strategy,
+              waveEveryMin:
+                strategy === SchedulingStrategy.WAVE
+                  ? ((dto as unknown as { waveEveryMin?: number })
+                      .waveEveryMin ?? null)
+                  : null,
+              waveCapacity:
+                strategy === SchedulingStrategy.WAVE
+                  ? ((dto as unknown as { waveCapacity?: number })
+                      .waveCapacity ?? null)
+                  : null,
+              wavePattern:
+                strategy === SchedulingStrategy.WAVE
+                  ? (((dto as unknown as { wavePattern?: unknown })
+                      .wavePattern ?? Prisma.JsonNull) as Prisma.InputJsonValue)
+                  : Prisma.JsonNull,
+              locationKey:
+                (dto as unknown as { locationKey?: string | null })
+                  .locationKey ?? null,
+            } as Prisma.DoctorScheduleRuleUpdateInput,
+          });
+        } else {
+          await this.prisma.doctorScheduleRule.create({
+            data: {
+              doctor: { connect: { id: doctorId } },
+              clinicId,
+              meetingType,
+              dayOfWeek,
+              timeOfDay: inferredTimeOfDay,
+              startMinute,
+              endMinute,
+              isActive,
+              slotDurationMin,
+              capacityPerSlot,
+              strategy,
+              waveEveryMin:
+                strategy === SchedulingStrategy.WAVE
+                  ? ((dto as unknown as { waveEveryMin?: number })
+                      .waveEveryMin ?? null)
+                  : null,
+              waveCapacity:
+                strategy === SchedulingStrategy.WAVE
+                  ? ((dto as unknown as { waveCapacity?: number })
+                      .waveCapacity ?? null)
+                  : null,
+              wavePattern:
+                strategy === SchedulingStrategy.WAVE
+                  ? (((dto as unknown as { wavePattern?: unknown })
+                      .wavePattern ?? Prisma.JsonNull) as Prisma.InputJsonValue)
+                  : Prisma.JsonNull,
+              locationKey:
+                (dto as unknown as { locationKey?: string | null })
+                  .locationKey ?? null,
+            } as Prisma.DoctorScheduleRuleCreateInput,
+          });
+        }
+
+        upserted++;
+      }
+    }
+
+    return { upserted };
+  }
+
+  async bulkCreateAndGenerate(dto: BulkScheduleRulesDto) {
+    const rules = await this.bulkCreateDefaultRules(dto);
+
+    const doctorId = this.toIntId(
+      (dto as unknown as { doctorId: unknown }).doctorId,
+      'doctorId',
+    );
+    const dateFrom = (dto as unknown as { dateFrom: string }).dateFrom;
+    const dateTo = (dto as unknown as { dateTo: string }).dateTo;
+
+    const from = this.parseDateOrThrow(dateFrom, 'dateFrom');
+    const to = this.parseDateOrThrow(dateTo, 'dateTo');
+    if (to <= from)
       throw new BadRequestException('dateTo must be after dateFrom');
-    }
 
-    // Recommended:
-    // return this.availabilitySlotsService.generateSlots(doctorId, dto.dateFrom, dto.dateTo);
+    const gen = await this.availabilitySlotsService.generateSlots(
+      String(doctorId),
+      dateFrom,
+      dateTo,
+    );
 
     return {
-      message: 'Hook up to AvailabilitySlotsService.generateSlots(doctorId, dateFrom, dateTo)',
-      doctorId,
-      dateFrom: dto.dateFrom,
-      dateTo: dto.dateTo,
+      ...rules,
+      slotsCreated: (gen as unknown as { created?: number }).created ?? 0,
+      range: { dateFrom, dateTo },
     };
   }
 
-  async upsertDayOverride(dto: UpsertDayOverrideDto) {
-    const doctorId = this.toInt(dto.doctorId, 'doctorId');
-    const date = new Date(dto.date);
-    if (Number.isNaN(date.getTime())) throw new BadRequestException('date must be valid ISO date');
+  // -----------------------
+  // Slot generation
+  // -----------------------
 
-    return this.prisma.doctorDayOverride.upsert({
-      where: { doctorId_date: { doctorId, date } },
-      create: {
-        doctorId,
-        date,
-        isClosed: dto.isClosed ?? true,
-        note: dto.note ?? null,
-      },
-      update: {
-        isClosed: dto.isClosed ?? true,
-        note: dto.note ?? null,
-      },
-    });
+  async generateSlotsForRange(dto: GenerateSlotsRangeDto) {
+    const doctorId = this.toIntId(
+      (dto as unknown as { doctorId: unknown }).doctorId,
+      'doctorId',
+    );
+
+    const dateFrom = (dto as unknown as { dateFrom: string }).dateFrom;
+    const dateTo = (dto as unknown as { dateTo: string }).dateTo;
+
+    const from = this.parseDateOrThrow(dateFrom, 'dateFrom');
+    const to = this.parseDateOrThrow(dateTo, 'dateTo');
+    if (to <= from)
+      throw new BadRequestException('dateTo must be after dateFrom');
+
+    return this.availabilitySlotsService.generateSlots(
+      String(doctorId),
+      dateFrom,
+      dateTo,
+    );
   }
 
+  // -----------------------
+  // Overrides
+  // -----------------------
+
+  async upsertDayOverride(dto: UpsertDayOverrideDto) {
+    const doctorId = this.toIntId(
+      (dto as unknown as { doctorId: unknown }).doctorId,
+      'doctorId',
+    );
+    const date = (dto as unknown as { date: string }).date;
+
+    this.parseDateOrThrow(date, 'date');
+
+    const isClosed = this.toBool(
+      (dto as unknown as { isClosed?: unknown }).isClosed,
+      false,
+    );
+    const note = (dto as unknown as { note?: string | null }).note ?? null;
+
+    const existing = await this.prisma.doctorDayOverride.findFirst({
+      where: { doctorId, date },
+    });
+
+    const record = existing
+      ? await this.prisma.doctorDayOverride.update({
+          where: { id: existing.id },
+          data: { isClosed, note },
+        })
+      : await this.prisma.doctorDayOverride.create({
+          data: {
+            doctor: { connect: { id: doctorId } },
+            date,
+            isClosed,
+            note,
+          } as Prisma.DoctorDayOverrideCreateInput,
+        });
+
+    await this.availabilitySlotsService.generateSlots(
+      String(doctorId),
+      date,
+      date,
+    );
+    return record;
+  }
 
   async upsertSessionOverride(dto: UpsertSessionOverrideDto) {
-    const doctorId = this.toInt(dto.doctorId, 'doctorId');
-    const date = new Date(dto.date);
-    if (Number.isNaN(date.getTime())) throw new BadRequestException('date must be valid ISO date');
+    const doctorId = this.toIntId(
+      (dto as unknown as { doctorId: unknown }).doctorId,
+      'doctorId',
+    );
+    const date = (dto as unknown as { date: string }).date;
 
-    return this.prisma.doctorSessionOverride.upsert({
-      where: {
-        doctorId_date_meetingType_timeOfDay_locationKey: {
-          doctorId,
-          date,
-          meetingType: dto.meetingType,
-          timeOfDay: dto.timeOfDay,
-          locationKey: dto.locationKey ?? 'NONE',
-        },
-      },
-      create: {
-        doctorId,
-        clinicId: dto.clinicId ?? null,
-        date,
-        meetingType: dto.meetingType,
-        timeOfDay: dto.timeOfDay,
-        locationKey: dto.locationKey ?? 'NONE',
-        isClosed: dto.isClosed ?? false,
-        startMinute: dto.startMinute ?? null,
-        endMinute: dto.endMinute ?? null,
-        slotDurationMin: dto.slotDurationMin ?? null,
-        capacityPerSlot: dto.capacityPerSlot ?? null,
-        note: dto.note ?? null,
-      },
-      update: {
-        clinicId: dto.clinicId ?? undefined,
-        isClosed: dto.isClosed ?? undefined,
-        startMinute: dto.startMinute ?? undefined,
-        endMinute: dto.endMinute ?? undefined,
-        slotDurationMin: dto.slotDurationMin ?? undefined,
-        capacityPerSlot: dto.capacityPerSlot ?? undefined,
-        note: dto.note ?? undefined,
-      },
+    this.parseDateOrThrow(date, 'date');
 
+    const timeOfDay = (dto as unknown as { timeOfDay: TimeOfDay }).timeOfDay;
+
+    const startMinute = (dto as unknown as { startMinute?: number })
+      .startMinute;
+    const endMinute = (dto as unknown as { endMinute?: number }).endMinute;
+
+    if (startMinute !== undefined && endMinute !== undefined) {
+      this.validateWindow(startMinute, endMinute);
+    }
+
+    const isClosed = this.toBool(
+      (dto as unknown as { isClosed?: unknown }).isClosed,
+      false,
+    );
+    const note = (dto as unknown as { note?: string | null }).note ?? null;
+
+    const existing = await this.prisma.doctorSessionOverride.findFirst({
+      where: { doctorId, date, timeOfDay },
     });
+
+    const record = existing
+      ? await this.prisma.doctorSessionOverride.update({
+          where: { id: existing.id },
+          data: {
+            isClosed,
+            note,
+            ...(startMinute !== undefined ? { startMinute } : {}),
+            ...(endMinute !== undefined ? { endMinute } : {}),
+          },
+        })
+      : await this.prisma.doctorSessionOverride.create({
+          data: {
+            doctor: { connect: { id: doctorId } },
+            date,
+            timeOfDay,
+            isClosed,
+            note,
+            startMinute: startMinute ?? null,
+            endMinute: endMinute ?? null,
+          } as Prisma.DoctorSessionOverrideCreateInput,
+        });
+
+    await this.availabilitySlotsService.generateSlots(
+      String(doctorId),
+      date,
+      date,
+    );
+    return record;
   }
 }

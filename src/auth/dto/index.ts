@@ -1,8 +1,1 @@
 export * from './register.dto';
-
-
-
-
-
-
-

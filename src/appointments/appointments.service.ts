@@ -116,10 +116,7 @@ export class AppointmentsService {
         throw new BadRequestException('Appointment already cancelled');
       }
 
-      const newBookedCount = Math.max(
-        0,
-        appointment.slot.bookedCount - 1,
-      );
+      const newBookedCount = Math.max(0, appointment.slot.bookedCount - 1);
 
       await tx.availabilitySlot.update({
         where: { id: appointment.slotId },
@@ -143,10 +140,7 @@ export class AppointmentsService {
   /* =====================================================
      PATIENT: DELETE APPOINTMENT (ONLY IF CANCELLED)
      ===================================================== */
-  async deleteAppointmentByPatient(
-    patientId: number,
-    appointmentId: number,
-  ) {
+  async deleteAppointmentByPatient(patientId: number, appointmentId: number) {
     const appointment = await this.prisma.appointment.findUnique({
       where: { id: appointmentId },
     });
@@ -163,9 +157,7 @@ export class AppointmentsService {
       appointment.status !== AppointmentStatus.CANCELLED_BY_PATIENT &&
       appointment.status !== AppointmentStatus.CANCELLED_BY_DOCTOR
     ) {
-      throw new BadRequestException(
-        'Cancel appointment before deleting',
-      );
+      throw new BadRequestException('Cancel appointment before deleting');
     }
 
     await this.prisma.appointment.delete({
@@ -249,10 +241,7 @@ export class AppointmentsService {
         throw new BadRequestException('Appointment already cancelled');
       }
 
-      const newBookedCount = Math.max(
-        0,
-        appointment.slot.bookedCount - 1,
-      );
+      const newBookedCount = Math.max(0, appointment.slot.bookedCount - 1);
 
       await tx.availabilitySlot.update({
         where: { id: appointment.slotId },

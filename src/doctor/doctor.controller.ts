@@ -1,10 +1,18 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, Req } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Body,
+  Patch,
+  Param,
+  Delete,
+  Req,
+} from '@nestjs/common';
 import { DoctorService } from './doctor.service';
 import { CreateDoctorDto } from './dto/create-doctor.dto';
 import { UpdateDoctorDto } from './dto/update-doctor.dto';
 import { DoctorOnly } from '../auth/guards/doctor-only.guard';
 import { ParseIntPipe } from '@nestjs/common';
-
 
 @Controller('doctor')
 export class DoctorController {
@@ -30,18 +38,17 @@ export class DoctorController {
   // optional: protect
   @Get(':id')
   findOne(@Param('id', ParseIntPipe) id: number) {
-  return this.doctorService.findOne(id);
+    return this.doctorService.findOne(id);
   }
-
 
   // optional: doctor-only (recommended if doctor edits own profile)
   @Patch(':id')
-    update(@Param('id', ParseIntPipe) id: number, @Body() dto: UpdateDoctorDto) {
-      return this.doctorService.update(id, dto);
-    }
+  update(@Param('id', ParseIntPipe) id: number, @Body() dto: UpdateDoctorDto) {
+    return this.doctorService.update(id, dto);
+  }
 
   @Delete(':id')
-    remove(@Param('id', ParseIntPipe) id: number) {
-      return this.doctorService.remove(id);
-    }
+  remove(@Param('id', ParseIntPipe) id: number) {
+    return this.doctorService.remove(id);
+  }
 }
