@@ -16,16 +16,6 @@ import { GenerateSlotsRangeDto } from './dto/generate-slots-range.dto';
 import { UpsertDayOverrideDto } from './dto/upsert-day-override.dto';
 import { UpsertSessionOverrideDto } from './dto/upsert-session-override.dto';
 
-// If you already have AvailabilitySlotsService, inject it and call it here.
-// import { AvailabilitySlotsService } from '../availability-slots/availability-slots.service';
-
-
-import { GenerateSlotsRangeDto } from "./dto/generate-slots-range.dto";
-import { UpsertDayOverrideDto } from './dto/upsert-day-override.dto';
-import { UpsertSessionOverrideDto } from './dto/upsert-session-override.dto';
-
-// If you already have AvailabilitySlotsService, inject it and call it here.
-// import { AvailabilitySlotsService } from '../availability-slots/availability-slots.service';
 
 
 @Injectable()
