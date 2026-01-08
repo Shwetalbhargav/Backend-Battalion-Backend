@@ -1,26 +1,44 @@
-import { Controller, Get, Query, Req, UseGuards } from '@nestjs/common';
+import { Controller, Get, Req, UseGuards } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
-import { AuthService } from "./auth.service";
+
+import { AuthService } from './auth.service';
+import { GoogleAuthGuard } from './google-auth.guard';
 
 @Controller('auth')
 export class AuthController {
-  constructor(private readonly auth: AuthService) {}
+  constructor(private readonly authService: AuthService) {}
 
-  // Step 1: redirect to Google
-  // Call: GET /auth/google?role=DOCTOR
-  @Get('google')
-  @UseGuards(AuthGuard('google'))
-  googleLogin(@Query('role') role: string) {
-    // passport handles redirect
-    return { message: 'Redirecting to Google...', role };
+  /**
+   * Doctor login
+   * GET /auth/doctor/google
+   */
+  @Get('doctor/google')
+  @UseGuards(GoogleAuthGuard)
+  doctorGoogleLogin(@Req() req: any) {
+    // Role will be injected by the guard from req.query.role
+    // We'll set it here so no query param is needed.
+    req.query.role = 'DOCTOR';
+    return;
   }
 
-  // Step 2: Google callback
+  /**
+   * Patient login
+   * GET /auth/patient/google
+   */
+  @Get('patient/google')
+  @UseGuards(GoogleAuthGuard)
+  patientGoogleLogin(@Req() req: any) {
+    req.query.role = 'PATIENT';
+    return;
+  }
+
+  /**
+   * Shared callback
+   * GET /auth/google/callback
+   */
   @Get('google/callback')
   @UseGuards(AuthGuard('google'))
   async googleCallback(@Req() req: any) {
-    // req.user is set by GoogleStrategy.validate()
-    const token = await this.auth.signJwt(req.user);
-    return { token, user: req.user };
+    return this.authService.googleLogin(req.user);
   }
 }

@@ -16,19 +16,31 @@ import { PatientModule } from '../patient/patient.module';
   imports: [
     ConfigModule,
     PassportModule,
-    UsersModule,
-    DoctorModule,
-    PatientModule,
     JwtModule.registerAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
-      useFactory: (cfg: ConfigService) => ({
-        secret: cfg.get('JWT_SECRET'),
-        signOptions: { expiresIn: cfg.get('JWT_EXPIRES_IN') ?? '7d' },
-      }),
+      useFactory: (cfg: ConfigService) => {
+        const secret = cfg.get<string>('JWT_SECRET');
+        if (!secret) throw new Error('JWT_SECRET is missing');
+
+        const expiresIn = cfg.get<string>('JWT_EXPIRES_IN') ?? '7d';
+
+        return {
+          secret,
+          signOptions: {
+            // Cast needed because some setups type expiresIn as ms.StringValue|number
+            expiresIn: expiresIn as any,
+          },
+        };
+      },
     }),
+
+    UsersModule,
+    DoctorModule,
+    PatientModule,
   ],
   controllers: [AuthController],
   providers: [AuthService, GoogleStrategy, JwtStrategy],
+  exports: [AuthService],
 })
 export class AuthModule {}
