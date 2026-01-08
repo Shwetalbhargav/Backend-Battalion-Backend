@@ -13,10 +13,9 @@ export class ElasticSchedulingController {
    * POST /api/v1/elastic-scheduling/session/expand
    */
   @Post('session/expand')
-        expandSession(@Body() dto: ExpandSessionDto) {
-  return this.service.expandSession(dto);
-}
-
+  expandSession(@Body() dto: ExpandSessionDto) {
+    return this.service.expandSession(dto);
+  }
 
   /**
    * Iteration 2 + Iteration 4: Shrink session (WAVE / STREAM)

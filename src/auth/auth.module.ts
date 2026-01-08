@@ -1,16 +1,11 @@
 import { Module } from '@nestjs/common';
-import { PassportModule } from '@nestjs/passport';
 import { JwtModule } from '@nestjs/jwt';
+import { PassportModule } from '@nestjs/passport';
 import { ConfigModule, ConfigService } from '@nestjs/config';
+import type { StringValue } from 'ms';
 
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
-import { GoogleStrategy } from './google.strategy';
-import { JwtStrategy } from './jwt.strategy';
-
-import { UsersModule } from '../users/users.module';
-import { DoctorModule } from '../doctor/doctor.module';
-import { PatientModule } from '../patient/patient.module';
 
 @Module({
   imports: [
@@ -19,28 +14,24 @@ import { PatientModule } from '../patient/patient.module';
     JwtModule.registerAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
-      useFactory: (cfg: ConfigService) => {
-        const secret = cfg.get<string>('JWT_SECRET');
-        if (!secret) throw new Error('JWT_SECRET is missing');
+      useFactory: (configService: ConfigService) => {
+        const secret = configService.get<string>('JWT_SECRET') ?? 'secret';
 
-        const expiresIn = cfg.get<string>('JWT_EXPIRES_IN') ?? '7d';
+        // Config is typically "1d", "12h", etc.
+        // Typings expect number | StringValue, not a plain string.
+        const expiresIn =
+          (configService.get<string>('JWT_EXPIRES_IN') as StringValue | undefined) ??
+          ('1d' as StringValue);
 
         return {
           secret,
-          signOptions: {
-            // Cast needed because some setups type expiresIn as ms.StringValue|number
-            expiresIn: expiresIn as any,
-          },
+          signOptions: { expiresIn },
         };
       },
     }),
-
-    UsersModule,
-    DoctorModule,
-    PatientModule,
   ],
   controllers: [AuthController],
-  providers: [AuthService, GoogleStrategy, JwtStrategy],
-  exports: [AuthService],
+  providers: [AuthService],
+  exports: [AuthService, JwtModule],
 })
 export class AuthModule {}

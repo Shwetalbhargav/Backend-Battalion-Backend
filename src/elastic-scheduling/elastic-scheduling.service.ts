@@ -1,4 +1,8 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { ExpandSessionDto } from './dto/expand-session.dto';
 import { ShrinkSessionDto } from './dto/shrink-session.dto';
@@ -11,7 +15,8 @@ import { UpdateCapacityDto } from './dto/update-capacity.dto';
 function dayStartUtcFromISO(dateISO: string): Date {
   // dateISO like "2026-01-06"
   const [y, m, d] = dateISO.split('-').map(Number);
-  if (!y || !m || !d) throw new BadRequestException('Invalid date format. Expected YYYY-MM-DD');
+  if (!y || !m || !d)
+    throw new BadRequestException('Invalid date format. Expected YYYY-MM-DD');
   return new Date(Date.UTC(y, m - 1, d, 0, 0, 0, 0));
 }
 
@@ -28,7 +33,9 @@ export class ElasticSchedulingService {
       throw new BadRequestException('start/end minutes must be integers');
     }
     if (start < 0 || end > 1440) {
-      throw new BadRequestException('start/end minutes must be in range 0..1440');
+      throw new BadRequestException(
+        'start/end minutes must be in range 0..1440',
+      );
     }
     if (start >= end) {
       throw new BadRequestException('newStartMinute must be < newEndMinute');
@@ -53,7 +60,9 @@ export class ElasticSchedulingService {
     });
 
     if (!session) {
-      throw new NotFoundException('AvailabilitySession not found for doctor/date/meetingType/timeOfDay');
+      throw new NotFoundException(
+        'AvailabilitySession not found for doctor/date/meetingType/timeOfDay',
+      );
     }
 
     return session;
@@ -170,7 +179,11 @@ export class ElasticSchedulingService {
 
     // Create many slots within new window. We avoid depending on status/capacity fields.
     const toCreate: any[] = [];
-    for (let m = dto.newStartMinute; m + slotDurationMin <= dto.newEndMinute; m += slotDurationMin) {
+    for (
+      let m = dto.newStartMinute;
+      m + slotDurationMin <= dto.newEndMinute;
+      m += slotDurationMin
+    ) {
       toCreate.push({
         sessionId: session.id,
         doctorId: session.doctorId,
@@ -195,7 +208,8 @@ export class ElasticSchedulingService {
 
     return {
       ok: true,
-      message: 'Session expanded (override stored + session window updated + slots created best-effort)',
+      message:
+        'Session expanded (override stored + session window updated + slots created best-effort)',
       createdSlots: created.count,
     };
   }
@@ -239,7 +253,10 @@ export class ElasticSchedulingService {
     const impactedSlots = await this.prisma.availabilitySlot.findMany({
       where: {
         sessionId: session.id,
-        OR: [{ startMinute: { lt: dto.newStartMinute } }, { endMinute: { gt: dto.newEndMinute } }],
+        OR: [
+          { startMinute: { lt: dto.newStartMinute } },
+          { endMinute: { gt: dto.newEndMinute } },
+        ],
       },
       select: { id: true, startMinute: true, endMinute: true },
     });
@@ -260,8 +277,13 @@ export class ElasticSchedulingService {
    * - Return OK (we’ll implement overflow logic after appointment merge)
    */
   async updateCapacity(dto: UpdateCapacityDto) {
-    if (!Number.isInteger(dto.newCapacityPerSlot) || dto.newCapacityPerSlot < 1) {
-      throw new BadRequestException('newCapacityPerSlot must be an integer >= 1');
+    if (
+      !Number.isInteger(dto.newCapacityPerSlot) ||
+      dto.newCapacityPerSlot < 1
+    ) {
+      throw new BadRequestException(
+        'newCapacityPerSlot must be an integer >= 1',
+      );
     }
 
     const day = dayStartUtcFromISO(dto.date);
