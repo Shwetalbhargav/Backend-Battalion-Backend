@@ -39,28 +39,52 @@ enum SlotStatus {
 enum TimeOfDay {
   MORNING
   EVENING
+  AFTERNOON
 }
-
 
 enum SchedulingStrategy {
   STREAM
   WAVE
 }
 
+enum RescheduleGroupStatus {
+  PENDING
+  ACCEPTED
+  DECLINED
+  EXPIRED
+}
 
-/* -------------------- Core Models -------------------- */
+enum RescheduleOfferStatus {
+  PENDING
+  ACCEPTED
+  DECLINED
+  EXPIRED
+}
 
-enum AppointmentStatus {
-  BOOKED
-  CONFIRMED
-  CANCELLED_BY_PATIENT
-  CANCELLED_BY_DOCTOR
+enum RescheduleDecisionReason {
+  PATIENT_ACCEPTED
+  PATIENT_DECLINED
+  AUTO_MOVED
+  EXPIRED
+  ADMIN_RESOLVED
 }
 
 /**
  * -------------------- Core Models --------------------
  */
 
+enum AppointmentStatus {
+  BOOKED
+  CONFIRMED
+  CANCELLED_BY_PATIENT
+  CANCELLED_BY_DOCTOR
+  IN_PROGRESS
+  COMPLETED
+}
+
+/**
+ * -------------------- Core Models --------------------
+ */
 
 model User {
   id    Int     @id @default(autoincrement())
@@ -95,15 +119,14 @@ model Doctor {
   scheduleRules DoctorScheduleRule[]
   slots         AvailabilitySlot[]
 
-
-
   appointments Appointment[]
 
-  createdAt              DateTime                @default(now())
-  updatedAt              DateTime                @updatedAt
-  availabilitySessions   AvailabilitySession[]
-  doctorDayOverrides     DoctorDayOverride[]
-  doctorSessionOverrides DoctorSessionOverride[]
+  createdAt                        DateTime                          @default(now())
+  updatedAt                        DateTime                          @updatedAt
+  availabilitySessions             AvailabilitySession[]
+  doctorDayOverrides               DoctorDayOverride[]
+  doctorSessionOverrides           DoctorSessionOverride[]
+  appointmentRescheduleOfferGroups AppointmentRescheduleOfferGroup[]
 }
 
 model Patient {
@@ -117,8 +140,10 @@ model Patient {
   phone        String?
   appointments Appointment[]
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt                        DateTime                          @default(now())
+  updatedAt                        DateTime                          @updatedAt
+  appointmentRescheduleOfferGroups AppointmentRescheduleOfferGroup[]
+  appointmentRescheduleOffers      AppointmentRescheduleOffer[]
 }
 
 /**
@@ -208,21 +233,16 @@ model DoctorScheduleRule {
   doctor Doctor  @relation(fields: [doctorId], references: [id], onDelete: Cascade)
   clinic Clinic? @relation(fields: [clinicId], references: [id])
 
-
-  strategy         SchedulingStrategy @default(STREAM)
+  strategy SchedulingStrategy @default(STREAM)
 
   // for simple wave
-  waveEveryMin     Int?   // e.g. 60 (wave repeats every hour)
-  waveCapacity     Int?   // e.g. 4  (how many patients in that wave block)
+  waveEveryMin Int? // e.g. 60 (wave repeats every hour)
+  waveCapacity Int? // e.g. 4  (how many patients in that wave block)
 
   // for advanced wave patterns
-  wavePattern      Json?  // Postgres jsonb (Prisma Json)
-  
-  @@index([doctorId, dayOfWeek, isActive])
-
+  wavePattern Json? // Postgres jsonb (Prisma Json)
 
   @@unique([doctorId, meetingType, dayOfWeek, timeOfDay, startMinute, endMinute])
-  @@index([doctorId, dayOfWeek, isActive])
 }
 
 /**
@@ -254,6 +274,12 @@ model AvailabilitySlot {
   // ✅ 1 appointment per slot
   appointment Appointment?
 
+  /// 🔁 reschedule relations (THIS replaces your duplicate field)
+  rescheduleOffers AppointmentRescheduleOffer[]
+
+  autoMoveRescheduleGroups AppointmentRescheduleOfferGroup[] @relation("AutoMoveSlot")
+  decidedRescheduleGroups  AppointmentRescheduleOfferGroup[] @relation("DecidedSlot")
+
   @@unique([sessionId, startMinute])
   @@index([doctorId, date, status])
 }
@@ -273,6 +299,8 @@ model AvailabilitySession {
   doctor            Doctor             @relation(fields: [doctorId], references: [id], onDelete: Cascade)
   clinic            Clinic?            @relation(fields: [clinicId], references: [id])
   availabilitySlots AvailabilitySlot[]
+
+  strategy SchedulingStrategy @default(STREAM)
 
   @@unique([doctorId, date, meetingType, timeOfDay, locationKey])
   @@index([doctorId, date, timeOfDay])
@@ -324,8 +352,6 @@ model DoctorSessionOverride {
   @@index([doctorId, date, timeOfDay])
 }
 
-
-
 /**
  * -------------------- Appointment Booking--------------------
  */
@@ -348,11 +374,78 @@ model Appointment {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  doctor  Doctor           @relation(fields: [doctorId], references: [id], onDelete: Cascade)
-  patient Patient          @relation(fields: [patientId], references: [id], onDelete: Cascade)
-  slot    AvailabilitySlot @relation(fields: [slotId], references: [id], onDelete: Cascade)
+  doctor                           Doctor                            @relation(fields: [doctorId], references: [id], onDelete: Cascade)
+  patient                          Patient                           @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  slot                             AvailabilitySlot                  @relation(fields: [slotId], references: [id], onDelete: Cascade)
+  appointmentRescheduleOfferGroups AppointmentRescheduleOfferGroup[]
+  appointmentRescheduleOffers      AppointmentRescheduleOffer[]
 
   @@index([doctorId, status])
   @@index([patientId, status])
 }
 
+model AppointmentRescheduleOfferGroup {
+  /// Public group id (UUID) — easy to reference in logs / URLs
+  groupId String @id @default(uuid())
+
+  appointmentId Int
+  patientId     Int
+  doctorId      Int? // doctor who created it (optional if system created)
+
+  reason String?
+  status RescheduleGroupStatus @default(PENDING)
+
+  /// fallback slot if patient doesn't pick in time
+  autoMoveSlotId Int?
+
+  /// when group expires
+  expiresAt DateTime
+
+  /// resolution
+  decidedAt      DateTime?
+  decidedSlotId  Int?
+  decisionReason RescheduleDecisionReason?
+  autoMoved      Boolean                   @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  appointment Appointment @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+  patient     Patient     @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  doctor      Doctor?     @relation(fields: [doctorId], references: [id], onDelete: SetNull)
+
+  autoMoveSlot AvailabilitySlot? @relation("AutoMoveSlot", fields: [autoMoveSlotId], references: [id], onDelete: SetNull)
+  decidedSlot  AvailabilitySlot? @relation("DecidedSlot", fields: [decidedSlotId], references: [id], onDelete: SetNull)
+
+  offers AppointmentRescheduleOffer[]
+
+  @@index([appointmentId, status, expiresAt])
+  @@index([patientId, status, expiresAt])
+}
+
+model AppointmentRescheduleOffer {
+  id Int @id @default(autoincrement())
+
+  groupId       String
+  appointmentId Int
+  patientId     Int
+  slotId        Int
+
+  status    RescheduleOfferStatus @default(PENDING)
+  expiresAt DateTime
+  decidedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  group       AppointmentRescheduleOfferGroup @relation(fields: [groupId], references: [groupId], onDelete: Cascade)
+  appointment Appointment                     @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+  patient     Patient                         @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  slot        AvailabilitySlot                @relation(fields: [slotId], references: [id], onDelete: Cascade)
+
+  /// One slot should appear at most once per group
+  @@unique([groupId, slotId])
+  @@index([appointmentId, status, expiresAt])
+  @@index([patientId, status, expiresAt])
+  @@index([slotId, status])
+}

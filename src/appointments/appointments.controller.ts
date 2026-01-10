@@ -17,11 +17,22 @@ import { CancelAppointmentDto } from './dto/cancel-appointment.dto';
 import { DoctorCancelAppointmentDto } from './dto/doctor-cancel-appointment.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
-import { Roles } from '../auth/roles.decorator';
+import { Roles } from "../auth/decorators/roles.decorator";
 import { Role } from '@prisma/client';
+import { AppointmentRescheduleOffersService } from '../reschedule-offers/appointment-reschedule-offers.service';
+import { IsInt } from 'class-validator';
+import { Type } from 'class-transformer';
+
 
 type AuthUser = { id: number | string };
 type AuthReqShape = { user: AuthUser };
+class AcceptRescheduleDto {
+  @Type(() => Number)
+  @IsInt()
+  slotId!: number;
+}
+
+
 
 function hasAuthShape(value: unknown): value is AuthReqShape {
   if (typeof value !== 'object' || value === null) return false;
@@ -45,7 +56,9 @@ function getUserId(req: unknown): number {
 @Controller('appointments')
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class AppointmentsController {
-  constructor(private readonly appointmentsService: AppointmentsService) {}
+  constructor(private readonly appointmentsService: AppointmentsService,
+    private readonly rescheduleOffersService: AppointmentRescheduleOffersService,
+  ) {}
 
   /* =====================================================
      PATIENT APIs
@@ -123,4 +136,31 @@ export class AppointmentsController {
       dto.reason,
     );
   }
+
+  @Post(':id/reschedule/accept')
+@Roles(Role.PATIENT)
+acceptRescheduleOffer(
+  @Req() req: unknown,
+  @Param('id', ParseIntPipe) appointmentId: number,
+  @Body() dto: AcceptRescheduleDto,
+) {
+  return this.rescheduleOffersService.acceptOffer({
+    appointmentId,
+    patientId: getUserId(req),
+    slotId: dto.slotId,
+  });
+}
+
+@Post(':id/reschedule/decline')
+@Roles(Role.PATIENT)
+declineRescheduleOffer(
+  @Req() req: unknown,
+  @Param('id', ParseIntPipe) appointmentId: number,
+) {
+  return this.rescheduleOffersService.declineOffer({
+    appointmentId,
+    patientId: getUserId(req),
+  });
+}
+
 }

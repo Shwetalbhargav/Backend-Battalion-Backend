@@ -7,6 +7,7 @@ import {
   Param,
   Delete,
   Req,
+  UseGuards
 } from '@nestjs/common';
 import { PatientService } from './patient.service';
 import { CreatePatientDto } from './dto/create-patient.dto';
@@ -21,7 +22,7 @@ export class PatientController {
   // ✅ Only PATIENT users can create patient profile
   // ✅ userId comes from JWT (Google OAuth login)
   @Post()
-  @PatientOnly()
+  @UseGuards(PatientOnly)
   create(@Req() req: any, @Body() dto: CreatePatientDto) {
     return this.patientService.create({
       ...dto,
