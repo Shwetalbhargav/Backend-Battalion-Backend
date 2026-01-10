@@ -20,10 +20,19 @@ export class AuthController {
 
   // GET /auth/google/callback?role=DOCTOR|PATIENT
   @Get('google/callback')
-  @UseGuards(AuthGuard('google'))
-  async googleCallback(@Req() req: any, @Query('role') role?: string) {
-    // req.user is set by GoogleStrategy.validate()
-    // We pass role as a fallback in case strategy didn't include it
-    return this.authService.googleLogin(req.user, role ?? Role.PATIENT);
+@UseGuards(AuthGuard('google'))
+async googleCallback(@Req() req: any, @Query('role') role?: string) {
+  const resolvedRole =
+    role === 'DOCTOR' ? Role.DOCTOR :
+    role === 'PATIENT' ? Role.PATIENT :
+    undefined;
+
+  // fallback only if strategy didn't set it
+  if (resolvedRole && !req.user?.role) {
+    req.user.role = resolvedRole;
   }
+
+  return this.authService.googleLogin(req.user);
+}
+
 }

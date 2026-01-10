@@ -180,6 +180,7 @@ export class ScheduleRulesService {
       (dto as unknown as { doctorId: unknown }).doctorId,
       'doctorId',
     );
+    const clinicId = dto.clinicId;
 
     const doctor = await this.prisma.doctor.findUnique({
       where: { id: doctorId },
@@ -189,8 +190,7 @@ export class ScheduleRulesService {
 
     const data: Prisma.DoctorScheduleRuleCreateInput = {
       doctor: { connect: { id: doctorId } },
-      clinicId:
-        (dto as unknown as { clinicId?: number | null }).clinicId ?? null,
+      clinic: { connect: { id: clinicId } },
       meetingType: (dto as unknown as { meetingType: MeetingType }).meetingType,
       dayOfWeek: (dto as unknown as { dayOfWeek: DayOfWeek }).dayOfWeek,
       timeOfDay: (dto as unknown as { timeOfDay: TimeOfDay }).timeOfDay,
@@ -215,8 +215,7 @@ export class ScheduleRulesService {
           ? ((dto as unknown as { wavePattern?: unknown })
               .wavePattern as Prisma.InputJsonValue)
           : Prisma.JsonNull,
-      locationKey:
-        (dto as unknown as { locationKey?: string | null }).locationKey ?? null,
+      
     };
 
     this.validateWindow(data.startMinute, data.endMinute);
@@ -229,7 +228,7 @@ export class ScheduleRulesService {
       wavePattern: data.wavePattern,
     });
 
-    if (data.meetingType === MeetingType.OFFLINE && !data.clinicId) {
+    if (data.meetingType === MeetingType.OFFLINE && !data.clinic) {
       throw new BadRequestException(
         'clinicId is required for OFFLINE schedule rule',
       );

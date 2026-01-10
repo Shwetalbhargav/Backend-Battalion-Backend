@@ -124,6 +124,36 @@ export class AvailabilitySlotsService {
         const startMinute = Number(r.startMinute);
         const endMinute = Number(r.endMinute);
 
+        const locationKeyValue = 'NONE'; // or derive from your rule if you have it
+
+        const session = await this.db.availabilitySession.upsert({
+          where: {
+            doctorId_date_meetingType_timeOfDay_locationKey: {
+              doctorId: did,
+              date,
+              meetingType: r.meetingType,
+              timeOfDay: r.timeOfDay,
+              locationKey: locationKeyValue,
+            },
+          },
+          update: {
+            clinicId: r.clinicId ?? null,
+            startMinute,
+            endMinute,
+          },
+          create: {
+            doctorId: did,
+            clinicId: r.clinicId ?? null,
+            meetingType: r.meetingType,
+            date,
+            timeOfDay: r.timeOfDay,
+            locationKey: locationKeyValue,
+            startMinute,
+            endMinute,
+          },
+        });
+
+
         if (
           !Number.isFinite(slotDurationMin) ||
           slotDurationMin <= 0 ||
@@ -142,19 +172,18 @@ export class AvailabilitySlotsService {
           const end = start + slotDurationMin;
 
           rows.push({
-            doctorId: did,
-            clinicId: r.clinicId ?? null,
-            meetingType: r.meetingType,
-            timeOfDay: r.timeOfDay,
-            date,
-            startMinute: start,
-            endMinute: end,
-            startAt: addMinutesToDate(date, start),
-            endAt: addMinutesToDate(date, end),
-            capacity: Number(r.capacityPerSlot ?? 1),
-            bookedCount: 0,
-            status: SlotStatus.AVAILABLE,
-          });
+              sessionId: session.id,
+              doctorId: did,
+              clinicId: r.clinicId ?? null,
+              meetingType: r.meetingType,
+              locationKey: locationKeyValue, // pick from rule/session input
+              date,
+              startMinute: start,
+              endMinute: end,
+              capacity: Number(r.capacityPerSlot ?? 1),
+              bookedCount: 0,
+              status: SlotStatus.AVAILABLE,
+            });
         }
       }
     }
@@ -182,15 +211,16 @@ export class AvailabilitySlotsService {
     if (to < from) throw new BadRequestException('dateTo must be >= dateFrom');
 
     return this.db.availabilitySlot.findMany({
-      where: {
-        doctorId: did,
-        date: { gte: from, lte: to },
-        meetingType: input.meetingType,
-        timeOfDay: input.timeOfDay,
-        status: input.status,
-      },
-      orderBy: [{ date: 'asc' }, { startMinute: 'asc' }],
-    });
+          where: {
+            doctorId: did,
+            date: { gte: from, lte: to },
+            meetingType: input.meetingType,
+            status: input.status,
+            ...(input.timeOfDay ? { session: { timeOfDay: input.timeOfDay } } : {}),
+          },
+          orderBy: [{ date: 'asc' }, { startMinute: 'asc' }],
+        });
+
   }
 
   /* =====================================================
@@ -205,17 +235,16 @@ export class AvailabilitySlotsService {
       where: { id },
     });
     if (!existing) throw new NotFoundException('Slot not found');
+    
+    const data: Prisma.AvailabilitySlotUpdateInput = {};
 
-    const data: Partial<UpdateSlotDto> = {};
-    (Object.keys(dto) as (keyof UpdateSlotDto)[]).forEach((key) => {
-      const value = dto[key];
-      if (value !== undefined) data[key] = value;
-    });
+    if (dto.capacity !== undefined) data.capacity = dto.capacity;
+    if (dto.bookedCount !== undefined) data.bookedCount = dto.bookedCount;
+    if (dto.status !== undefined) data.status = dto.status as SlotStatus;
 
-    return this.db.availabilitySlot.update({
-      where: { id },
-      data,
-    });
+    return this.db.availabilitySlot.update({ where: { id }, data });
+
+    
   }
 
   /* =====================================================
@@ -247,6 +276,34 @@ export class AvailabilitySlotsService {
     if (!Number.isFinite(capacity) || capacity < 1) {
       throw new BadRequestException('capacity must be >= 1');
     }
+    const locationKeyValue = 'NONE';
+
+        const session = await this.db.availabilitySession.upsert({
+          where: {
+            doctorId_date_meetingType_timeOfDay_locationKey: {
+              doctorId: did,
+              date,
+              meetingType: input.meetingType,
+              timeOfDay: input.timeOfDay,
+              locationKey: locationKeyValue,
+            },
+          },
+          update: {
+            clinicId: input.clinicId ?? null,
+            startMinute,
+            endMinute,
+          },
+          create: {
+            doctorId: did,
+            clinicId: input.clinicId ?? null,
+            meetingType: input.meetingType,
+            date,
+            timeOfDay: input.timeOfDay,
+            locationKey: locationKeyValue,
+            startMinute,
+            endMinute,
+          },
+        });
 
     const rows: Prisma.AvailabilitySlotCreateManyInput[] = [];
 
@@ -258,19 +315,19 @@ export class AvailabilitySlotsService {
       const end = start + slotDurationMin;
 
       rows.push({
+        sessionId: session.id,
         doctorId: did,
         clinicId: input.clinicId ?? null,
         meetingType: input.meetingType,
-        timeOfDay: input.timeOfDay,
+        locationKey: locationKeyValue,
         date,
         startMinute: start,
         endMinute: end,
-        startAt: addMinutesToDate(date, start),
-        endAt: addMinutesToDate(date, end),
         capacity,
         bookedCount: 0,
         status: SlotStatus.AVAILABLE,
       });
+
     }
 
     if (rows.length === 0) return { created: 0 };

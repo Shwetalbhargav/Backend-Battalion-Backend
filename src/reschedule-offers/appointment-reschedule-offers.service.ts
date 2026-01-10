@@ -1,96 +1,132 @@
 // src/reschedule-offers/appointment-reschedule-offers.service.ts
+
 import {
   BadRequestException,
   ConflictException,
-  Inject,
+  ForbiddenException,
   Injectable,
   Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { randomUUID } from 'crypto';
-import { CreateRescheduleOffersDto } from './dto/create-reschedule-offers.dto';
-
-// Adjust this import path if your PrismaService lives elsewhere.
 import { PrismaService } from '../prisma/prisma.service';
+import { AppointmentStatus, SchedulingStrategy } from '@prisma/client';
+import { SlotStatus } from '@prisma/client';
 
-export type RescheduleOfferStatus =
-  | 'PENDING'
-  | 'ACCEPTED'
-  | 'DECLINED'
-  | 'EXPIRED';
+type OfferStatus = 'PENDING' | 'ACCEPTED' | 'DECLINED' | 'EXPIRED';
+type GroupStatus = 'PENDING' | 'ACCEPTED' | 'DECLINED' | 'EXPIRED';
+
+// If your SlotStatus is an enum in Prisma, replace this with the real type.
+
+
+function isTerminalGroupStatus(s: GroupStatus): boolean {
+  return s === 'ACCEPTED' || s === 'DECLINED' || s === 'EXPIRED';
+}
+
+function assertForwardOnly(oldStartMinute: number, newStartMinute: number) {
+  if (newStartMinute < oldStartMinute) {
+    throw new BadRequestException('Forward-only invariant violated');
+  }
+}
+
+function assertStrategyEligible(
+  strategy: SchedulingStrategy,
+  slot: { bookedCount: number; capacity: number; status: SlotStatus  },
+) {
+  if (slot.status !== SlotStatus.AVAILABLE) {
+    throw new ConflictException('Slot not available');
+  }
+
+  const booked = slot.bookedCount ?? 0;
+  const cap = slot.capacity ?? 1;
+
+  if (strategy === SchedulingStrategy.STREAM) {
+    if (booked !== 0) throw new ConflictException('STREAM slot already booked');
+  } else {
+    // WAVE
+    if (booked >= cap) throw new ConflictException('WAVE slot at capacity');
+  }
+}
+
+export interface CreateRescheduleOffersDto {
+  appointmentId: number;
+  doctorId?: number; 
+  slotIds: number[];
+  autoMoveSlotId: number;
+  expiresAt: string; // ISO
+  reason?: string | null;
+}
+
+export interface AcceptOfferParams {
+  appointmentId: number;
+  patientId: number;
+  slotId: number;
+}
+
+export interface DeclineOfferParams {
+  appointmentId: number;
+  patientId: number;
+}
+
+export interface FindPendingDisplacementGroupsParams {
+  sessionId: number;
+  limit?: number;
+}
+
+export interface AllocateDisplacementsParams {
+  sessionId: number;
+  doctorId: number;  
+  date:Date;
+  sessionStartMinute: number;
+  sessionEndMinute: number;
+  protectedUntilMinute: number; // “buffer zone”
+  strategy: SchedulingStrategy;
+  limit?: number;
+}
 
 @Injectable()
 export class AppointmentRescheduleOffersService {
   private readonly logger = new Logger(AppointmentRescheduleOffersService.name);
 
-  constructor(
-    // Keep prisma as `any` so this compiles even if your generated Prisma types differ slightly.
-    @Inject(PrismaService) private readonly prisma: any,
-  ) {}
-  /**
-   * Phase 3 internal helper used by SHRINK flow.
-   * Keeps older createRescheduleOffers() intact.
-   */
-  async createOffers(args: {
-    appointmentId: number;
-    doctorId: number; // maps to createdByDoctorId
-    slotIds: number[];
-    autoMoveSlotId: number;
-    expiresAt: Date;
-    reason?: string;
-  }) {
-    return this.createRescheduleOffers({
-      appointmentId: args.appointmentId,
-      doctorId: args.doctorId,
-      slotIds: args.slotIds,
-      autoMoveSlotId: args.autoMoveSlotId,
-      expiresAt: args.expiresAt.toISOString(),
-      createdByDoctorId: args.doctorId,
-      reason: args.reason,
-    });
-  }
+  constructor(private readonly prisma: PrismaService) {}
 
   /**
    * Create an offer group + individual offers for an impacted appointment.
-   * Intended to be called by SHRINK flow (internal), not necessarily exposed as public API.
+   * This is your core “SHRINK => create 3 offers + fallback” entry.
    */
   async createRescheduleOffers(dto: CreateRescheduleOffersDto) {
     const expiresAt = new Date(dto.expiresAt);
-    if (Number.isNaN(expiresAt.getTime())) {
-      throw new BadRequestException('Invalid expiresAt');
-    }
-    if (!dto.slotIds?.length) {
-      throw new BadRequestException('slotIds cannot be empty');
-    }
+    if (Number.isNaN(expiresAt.getTime())) throw new BadRequestException('Invalid expiresAt');
+    if (!dto.slotIds?.length) throw new BadRequestException('slotIds cannot be empty');
+
+    // warn if fallback not part of offers
     if (!dto.slotIds.includes(dto.autoMoveSlotId)) {
-      // Not strictly required, but avoids confusion. Your plan says fallback = earliest offered slot.
       this.logger.warn(
-        `autoMoveSlotId=${dto.autoMoveSlotId} is not included in slotIds; continuing anyway.`,
+        `autoMoveSlotId=${dto.autoMoveSlotId} not in slotIds; continuing (fallback may not be visible to patient).`,
       );
     }
 
-    // Basic existence checks
     const appointment = await this.prisma.appointment.findUnique({
       where: { id: dto.appointmentId },
       select: {
         id: true,
         status: true,
         patientId: true,
-        availabilitySlotId: true,
+        slotId: true,
       },
     });
+
     if (!appointment) throw new NotFoundException('Appointment not found');
 
-    // Prevent stacking multiple active offer groups for the same appointment
-    const existingActiveGroup =
-      await this.prisma.appointmentRescheduleOfferGroup.findFirst({
-        where: {
-          appointmentId: dto.appointmentId,
-          status: 'PENDING',
-          expiresAt: { gt: new Date() },
-        },
-        select: { id: true, groupId: true },
-      });
+    const existingActiveGroup = await this.prisma.appointmentRescheduleOfferGroup.findFirst({
+      where: {
+        appointmentId: dto.appointmentId,
+        status: 'PENDING',
+        expiresAt: { gt: new Date() },
+      },
+      select: { groupId: true },
+    });
+
     if (existingActiveGroup) {
       throw new ConflictException(
         `Active reschedule offers already exist for appointmentId=${dto.appointmentId}`,
@@ -100,12 +136,25 @@ export class AppointmentRescheduleOffersService {
     const groupId = randomUUID();
 
     return this.prisma.$transaction(async (tx) => {
+      // expire any “pending but not detected” groups (defensive)
+      await tx.appointmentRescheduleOfferGroup.updateMany({
+        where: {
+          appointmentId: dto.appointmentId,
+          status: 'PENDING',
+          expiresAt: { gt: new Date() },
+        },
+        data: {
+          status: 'EXPIRED',
+          decidedAt: new Date(),
+        },
+      });
+
       const group = await tx.appointmentRescheduleOfferGroup.create({
         data: {
           groupId,
           appointmentId: dto.appointmentId,
           patientId: appointment.patientId,
-          createdByDoctorId: dto.createdByDoctorId,
+          doctorId: dto.doctorId,
           reason: dto.reason ?? null,
           autoMoveSlotId: dto.autoMoveSlotId,
           expiresAt,
@@ -113,23 +162,22 @@ export class AppointmentRescheduleOffersService {
         },
       });
 
-      // Optionally validate slots exist (safe check)
       const slots = await tx.availabilitySlot.findMany({
         where: { id: { in: dto.slotIds } },
-        select: { id: true, startTime: true, endTime: true, isAvailable: true },
+        select: { id: true },
       });
+
       if (slots.length !== dto.slotIds.length) {
         throw new BadRequestException('One or more slotIds do not exist');
       }
 
-      // Create offers
       await tx.appointmentRescheduleOffer.createMany({
         data: dto.slotIds.map((slotId) => ({
           groupId: group.groupId,
           appointmentId: dto.appointmentId,
           patientId: appointment.patientId,
           slotId,
-          status: 'PENDING',
+          status: 'PENDING' as OfferStatus,
           expiresAt,
         })),
         skipDuplicates: true,
@@ -147,12 +195,9 @@ export class AppointmentRescheduleOffersService {
 
   /**
    * For patient UI: fetch currently pending offers for an appointment.
-   * (Your appointments controller can call this in GET /appointments/:id/reschedule-offers)
+   * Good for: GET /appointments/:id/reschedule-offers
    */
-  async getPendingOffersForAppointment(
-    appointmentId: number,
-    patientId?: number,
-  ) {
+  async getPendingOffersForAppointment(appointmentId: number, patientId?: number) {
     const now = new Date();
 
     const group = await this.prisma.appointmentRescheduleOfferGroup.findFirst({
@@ -167,7 +212,7 @@ export class AppointmentRescheduleOffersService {
         groupId: true,
         appointmentId: true,
         patientId: true,
-        createdByDoctorId: true,
+        doctorId: true,
         reason: true,
         autoMoveSlotId: true,
         expiresAt: true,
@@ -177,12 +222,7 @@ export class AppointmentRescheduleOffersService {
     });
 
     if (!group) {
-      return {
-        appointmentId,
-        active: false,
-        group: null,
-        offers: [],
-      };
+      return { appointmentId, active: false, group: null, offers: [] };
     }
 
     const offers = await this.prisma.appointmentRescheduleOffer.findMany({
@@ -192,35 +232,20 @@ export class AppointmentRescheduleOffersService {
         expiresAt: { gt: now },
       },
       orderBy: { slotId: 'asc' },
-      select: {
-        id: true,
-        slotId: true,
-        status: true,
-        expiresAt: true,
-      },
+      select: { id: true, slotId: true, status: true, expiresAt: true },
     });
 
-    return {
-      appointmentId,
-      active: true,
-      group,
-      offers,
-    };
+    return { appointmentId, active: true, group, offers };
   }
 
   /**
-   * Patient accepts a specific slot offer.
-   * (Your appointments controller can call this from POST /appointments/:id/reschedule/accept)
+   * Patient accepts a specific offered slot.
+   * Good for: POST /appointments/:id/reschedule/accept
    */
-  async acceptOffer(params: {
-    appointmentId: number;
-    patientId: number;
-    slotId: number;
-  }) {
+  async acceptOffer(params: AcceptOfferParams) {
     const { appointmentId, patientId, slotId } = params;
     const now = new Date();
 
-    // Load active group
     const group = await this.prisma.appointmentRescheduleOfferGroup.findFirst({
       where: {
         appointmentId,
@@ -228,17 +253,11 @@ export class AppointmentRescheduleOffersService {
         status: 'PENDING',
         expiresAt: { gt: now },
       },
-      select: {
-        groupId: true,
-        expiresAt: true,
-        autoMoveSlotId: true,
-      },
+      select: { groupId: true, expiresAt: true, autoMoveSlotId: true },
     });
 
-    if (!group)
-      throw new NotFoundException('No active reschedule offer group found');
+    if (!group) throw new NotFoundException('No active reschedule offer group found');
 
-    // Ensure offer exists & pending
     const offer = await this.prisma.appointmentRescheduleOffer.findFirst({
       where: {
         groupId: group.groupId,
@@ -250,131 +269,207 @@ export class AppointmentRescheduleOffersService {
       },
       select: { id: true, slotId: true },
     });
+
     if (!offer) throw new NotFoundException('Selected offer is not available');
 
-    return this.prisma.$transaction(async (tx) => {
-      // Lock-like check: ensure group still pending
+    await this.prisma.$transaction(async (tx) => {
       const freshGroup = await tx.appointmentRescheduleOfferGroup.findUnique({
         where: { groupId: group.groupId },
         select: { status: true, expiresAt: true },
       });
+
       if (!freshGroup || freshGroup.status !== 'PENDING') {
         throw new ConflictException('Offer group is no longer pending');
       }
-      if (new Date(freshGroup.expiresAt) <= now) {
-        throw new ConflictException('Offer group has expired');
-      }
+      if (new Date(freshGroup.expiresAt) <= now) throw new ConflictException('Offer group has expired');
 
-      // Validate slot availability (minimal check; your real logic may check WAVE capacity)
-      const slot = await tx.availabilitySlot.findUnique({
-        where: { id: slotId },
-        select: { id: true, isAvailable: true },
-      });
-      if (!slot) throw new BadRequestException('Slot not found');
-      if (slot.isAvailable === false) {
-        throw new ConflictException('Slot is no longer available');
-      }
-
-      // Move appointment to chosen slot
-      const updatedAppointment = await tx.appointment.update({
+      const appt = await tx.appointment.update({
         where: { id: appointmentId },
-        data: {
-          availabilitySlotId: slotId,
-          // Optional fields you might have:
-          // rescheduledAt: now,
-          // updatedAt: now,
+        data: { slotId: slotId },
+        include: { slot: true }, 
+      });
+
+
+      if (!appt) throw new NotFoundException('Appointment not found');
+      if (appt.patientId !== patientId) throw new ForbiddenException('Not your appointment');
+
+      if (
+        appt.status === AppointmentStatus.CANCELLED_BY_DOCTOR ||
+        appt.status === AppointmentStatus.CANCELLED_BY_PATIENT
+      ) {
+        throw new BadRequestException('Appointment is cancelled');
+      }
+
+      const newSlot = await tx.availabilitySlot.findUnique({
+        where: { id: slotId },
+        select: {
+          id: true,          
+          bookedCount: true,
+          capacity: true,
+          startMinute: true,
+          status: true,
         },
       });
 
-      // Mark accepted offer & finalize group
+      if (!newSlot) throw new BadRequestException('Slot not found');
+      if (newSlot.status !== SlotStatus.AVAILABLE) throw new ConflictException('Slot is no longer available');
+
+      // forward-only (needs appt.slot.startMinute)
+      if (appt.slot?.startMinute != null && newSlot.startMinute != null) {
+        assertForwardOnly(appt.slot.startMinute, newSlot.startMinute);
+      }
+
+      // Reserve in target slot (capacity-safe)
+      const reserved = await tx.availabilitySlot.updateMany({
+        where: {
+          id: slotId,
+          status: SlotStatus.AVAILABLE,
+          bookedCount: { lt: newSlot.capacity ?? 1 },
+        },
+        data: { bookedCount: { increment: 1 } },
+      });
+
+      if (reserved.count !== 1) throw new ConflictException('Target slot just became full');
+
+      // release old slot seat (best-effort; only if you track bookedCount)
+      if (appt.slotId) {
+        await tx.availabilitySlot.update({
+          where: { id: appt.slotId },
+          data: {
+            bookedCount: { decrement: 1 },
+             status: SlotStatus.AVAILABLE
+          },
+        });
+      }
+
+      // move appointment
+      await tx.appointment.update({
+        where: { id: appointmentId },
+        data: { slotId: slotId },
+      });
+
+      // mark offers and group
       await tx.appointmentRescheduleOffer.update({
         where: { id: offer.id },
         data: { status: 'ACCEPTED', decidedAt: now },
       });
 
       await tx.appointmentRescheduleOffer.updateMany({
-        where: {
-          groupId: group.groupId,
-          id: { not: offer.id },
-          status: 'PENDING',
-        },
-        data: { status: 'DECLINED', decidedAt: now },
+        where: { groupId: group.groupId, id: { not: offer.id }, status: 'PENDING' },
+        data: { status: 'EXPIRED', decidedAt: now },
       });
 
       await tx.appointmentRescheduleOfferGroup.update({
         where: { groupId: group.groupId },
-        data: { status: 'ACCEPTED', decidedAt: now, decidedSlotId: slotId },
+        data: {
+          status: 'ACCEPTED',
+          decidedAt: now,
+          decidedSlotId: slotId,
+          decisionReason: 'PATIENT_ACCEPTED',
+        },
       });
-
-      return {
-        appointmentId,
-        movedToSlotId: slotId,
-        groupId: group.groupId,
-        appointment: updatedAppointment,
-      };
     });
+
+    return { ok: true, appointmentId, movedToSlotId: slotId };
   }
 
   /**
-   * Worker entry: auto-move any expired pending groups to their fallback slot.
-   * Forward-only policy & detailed constraints should be enforced in your slot selection layer.
-   * Here we simply apply the precomputed fallback.
+   * Patient declines the whole offer group.
+   * Good for: POST /appointments/:id/reschedule/decline
+   */
+  async declineOffer(params: DeclineOfferParams) {
+    const { appointmentId, patientId } = params;
+    const now = new Date();
+
+    const group = await this.prisma.appointmentRescheduleOfferGroup.findFirst({
+      where: { appointmentId, patientId, status: 'PENDING' },
+      include: { offers: true },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    if (!group) {
+      const resolved = await this.prisma.appointmentRescheduleOfferGroup.findFirst({
+        where: {
+          appointmentId,
+          patientId,
+          status: { in: ['ACCEPTED', 'DECLINED', 'EXPIRED'] },
+        },
+        orderBy: { decidedAt: 'desc' },
+      });
+
+      if (resolved) return { ok: true, idempotent: true, message: 'Offer already resolved', appointmentId };
+      throw new NotFoundException('No reschedule offer group found');
+    }
+
+    if (group.expiresAt <= now) throw new ConflictException('Offer group has expired');
+    if (group.status !== 'PENDING') return { ok: true, idempotent: true, message: 'Offer already resolved', appointmentId };
+
+    await this.prisma.$transaction(async (tx) => {
+      const freshGroup = await tx.appointmentRescheduleOfferGroup.findUnique({ where: { groupId: group.groupId  } });
+      if (!freshGroup) throw new NotFoundException('Offer group not found');
+      if (freshGroup.status !== 'PENDING') return;
+
+      if (freshGroup.expiresAt <= now) throw new ConflictException('Offer group has expired');
+
+      await tx.appointmentRescheduleOffer.updateMany({
+        where: { groupId: freshGroup.groupId, status: 'PENDING' },
+        data: { status: 'DECLINED', decidedAt: now },
+      });
+
+      await tx.appointmentRescheduleOfferGroup.update({
+        where: { groupId: freshGroup.groupId },
+        data: { status: 'DECLINED', decidedAt: now },
+      });
+    });
+
+    this.logger.log(`Reschedule DECLINED appt=${appointmentId} patient=${patientId} group=${group.groupId}`);
+    return { ok: true, appointmentId, offerGroupId: group.groupId };
+  }
+
+  /**
+   * Worker: auto-move expired pending groups to their fallback slot (autoMoveSlotId).
+   * Good for: cron/queue job
    */
   async autoMoveExpiredOffers(limit = 50) {
     const now = new Date();
 
-    const expiredGroups =
-      await this.prisma.appointmentRescheduleOfferGroup.findMany({
-        where: {
-          status: 'PENDING',
-          expiresAt: { lte: now },
-        },
-        orderBy: { expiresAt: 'asc' },
-        take: limit,
-        select: {
-          groupId: true,
-          appointmentId: true,
-          patientId: true,
-          autoMoveSlotId: true,
-          expiresAt: true,
-        },
-      });
+    const expiredGroups = await this.prisma.appointmentRescheduleOfferGroup.findMany({
+      where: { status: 'PENDING', expiresAt: { lte: now } },
+      orderBy: { expiresAt: 'asc' },
+      take: limit,
+      select: { groupId: true, appointmentId: true, autoMoveSlotId: true },
+    });
 
     if (!expiredGroups.length) return { processed: 0, moved: 0 };
 
     let moved = 0;
 
-    for (const group of expiredGroups) {
+    for (const g of expiredGroups) {
       try {
         await this.prisma.$transaction(async (tx) => {
-          // Re-check in transaction
           const fresh = await tx.appointmentRescheduleOfferGroup.findUnique({
-            where: { groupId: group.groupId },
+            where: { groupId: g.groupId },
             select: { status: true },
           });
+
           if (!fresh || fresh.status !== 'PENDING') return;
 
-          // Move appointment to fallback slot
           await tx.appointment.update({
-            where: { id: group.appointmentId },
-            data: {
-              availabilitySlotId: group.autoMoveSlotId,
-              // rescheduledAt: now,
-            },
+            where: { id: g.appointmentId },
+            data: { slotId: g.autoMoveSlotId },
           });
 
-          // Mark offers + group
           await tx.appointmentRescheduleOffer.updateMany({
-            where: { groupId: group.groupId, status: 'PENDING' },
+            where: { groupId: g.groupId, status: 'PENDING' },
             data: { status: 'EXPIRED', decidedAt: now },
           });
 
           await tx.appointmentRescheduleOfferGroup.update({
-            where: { groupId: group.groupId },
+            where: { groupId: g.groupId },
             data: {
               status: 'EXPIRED',
               decidedAt: now,
-              decidedSlotId: group.autoMoveSlotId,
+              decidedSlotId: g.autoMoveSlotId,
               autoMoved: true,
             },
           });
@@ -382,13 +477,148 @@ export class AppointmentRescheduleOffersService {
 
         moved += 1;
       } catch (e: any) {
-        // Don’t crash the worker loop; just log & continue
-        this.logger.error(
-          `Auto-move failed for groupId=${group.groupId}, appointmentId=${group.appointmentId}: ${e?.message ?? e}`,
-        );
+        this.logger.error(`Auto-move failed groupId=${g.groupId}, appt=${g.appointmentId}: ${e?.message ?? String(e)}`);
       }
     }
 
     return { processed: expiredGroups.length, moved };
+  }
+
+  /**
+   * EXPAND helper: find pending “displacement” groups for appointments in a given session.
+   * (This matches your later section but fixed syntax + typed params.)
+   */
+  async findPendingDisplacementGroupsForSession(params: FindPendingDisplacementGroupsParams) {
+    const limit = params.limit ?? 200;
+
+    return this.prisma.appointmentRescheduleOfferGroup.findMany({
+      where: {
+        status: 'PENDING',
+        appointment: {
+          slot: { sessionId: params.sessionId },
+        },
+      },
+      orderBy: {
+        appointment: { slot: { startMinute: 'asc' } },
+      },
+      take: limit,
+      select: {
+        groupId: true,
+        appointmentId: true,
+        patientId: true,
+        expiresAt: true,
+        autoMoveSlotId: true,
+        appointment: {
+          select: {
+            id: true,
+            status: true,
+            
+            slot: { select: { id: true, startMinute: true, date: true, sessionId: true } },
+          },
+        },
+      },
+    });
+  }
+
+  /**
+   * EXPAND helper: allocate displaced appointments forward-only into the expanded window.
+   * Fixed: awaits loop, removes invalid Prisma filters, capacity-check for WAVE.
+   */
+  async allocatePendingDisplacementsForSession(params: AllocateDisplacementsParams) {
+    const limit = params.limit ?? 200;
+
+    const groups = await this.findPendingDisplacementGroupsForSession({
+      sessionId: params.sessionId,
+      limit,
+    });
+
+    if (!groups.length) return { processed: 0, moved: 0, resolvedWithoutMove: 0 };
+
+    let moved = 0;
+    let resolvedWithoutMove = 0;
+
+    for (const g of groups) {
+      const appt = g.appointment;
+      if (!appt?.slot) continue;
+
+      // never move protected statuses
+      if (appt.status === AppointmentStatus.IN_PROGRESS || appt.status === AppointmentStatus.COMPLETED) continue;
+
+      const currentMinute = appt.slot.startMinute;
+
+      const withinExpandedWindow =
+        currentMinute >= params.sessionStartMinute && currentMinute <= params.sessionEndMinute - 1;
+
+      const pastProtectedBuffer = currentMinute > params.protectedUntilMinute;
+
+      // if it’s no longer displaced, expire the group as “resolved”
+      if (withinExpandedWindow && pastProtectedBuffer) {
+        await this.prisma.appointmentRescheduleOfferGroup.update({
+          where: { groupId: g.groupId },
+          data: { status: 'EXPIRED' },
+        });
+        await this.prisma.appointmentRescheduleOffer.updateMany({
+          where: { groupId: g.groupId },
+          data: { status: 'EXPIRED' },
+        });
+        resolvedWithoutMove++;
+        continue;
+      }
+
+      const minMinute = Math.max(currentMinute, params.protectedUntilMinute + 1);
+
+      // candidate slots
+      const candidates = await this.prisma.availabilitySlot.findMany({
+        where: {
+          sessionId: params.sessionId,
+          startMinute: { gte: minMinute, lte: params.sessionEndMinute - 1 },
+          status: SlotStatus.AVAILABLE,
+        },
+        orderBy: { startMinute: 'asc' },
+        take: 50,
+        select: { id: true, startMinute: true, bookedCount: true, capacity: true, status: true },
+      });
+
+      let chosen = candidates[0];
+
+      if (params.strategy === SchedulingStrategy.STREAM) {
+        chosen = candidates.find((s) => (s.bookedCount ?? 0) === 0);
+      } else {
+        // WAVE capacity rule
+        chosen = candidates.find((s) => (s.bookedCount ?? 0) < (s.capacity ?? 1));
+      }
+
+      if (!chosen) continue;
+
+      // move + resolve atomically
+      await this.prisma.$transaction(async (tx) => {
+        await tx.appointment.update({
+          where: { id: appt.id },
+          data: { slotId: chosen!.id },
+        });
+
+        await tx.availabilitySlot.update({
+          where: { id: chosen!.id },
+          data: {
+            bookedCount: { increment: 1 },
+            ...(params.strategy === SchedulingStrategy.STREAM ? { status: SlotStatus.FULL } : {}),
+          },
+        });
+
+        await tx.appointmentRescheduleOfferGroup.update({
+          where: { groupId: g.groupId },
+          data: { status: 'EXPIRED' },
+        });
+
+        await tx.appointmentRescheduleOffer.updateMany({
+          where: { groupId: g.groupId },
+          data: { status: 'EXPIRED' },
+        });
+      });
+
+      moved++;
+    }
+
+    return { processed: groups.length, moved, resolvedWithoutMove };
   }
 }
