@@ -6,31 +6,25 @@ import {
   IsNotEmpty,
   IsObject,
   IsOptional,
-  IsString,
-  Min,
+  IsString,  Min,
   ValidateIf,
 } from 'class-validator';
 import { DayOfWeek, MeetingType, SchedulingStrategy, TimeOfDay } from '@prisma/client';
-
-export class CreateScheduleRuleDto {
-  @IsString()
-  @IsNotEmpty()
-  doctorId: string;
-
-import { IsBoolean, IsEnum, IsInt, IsOptional, Min } from 'class-validator';
 import { Type } from 'class-transformer';
-import { DayOfWeek, MeetingType, TimeOfDay } from '@prisma/client';
+
+
+
+
 
 export class CreateScheduleRuleDto {
   @Type(() => Number)
   @IsInt()
   doctorId: number;
 
-
-  @IsOptional()
   @Type(() => Number)
   @IsInt()
-  clinicId?: number | null;
+  @IsNotEmpty()
+  clinicId: number;  
 
   @IsEnum(MeetingType)
   meetingType: MeetingType;
@@ -52,11 +46,7 @@ export class CreateScheduleRuleDto {
   @Min(1)
   endMinute: number; // minutes from midnight
 
-  @Min(0)
-  endMinute: number;
-
-
-  /**
+   /**
    * STREAM defaults
    */
   @IsOptional()
