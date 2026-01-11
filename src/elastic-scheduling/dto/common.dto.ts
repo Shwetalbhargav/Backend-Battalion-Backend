@@ -1,4 +1,4 @@
-import { IsDateString, IsEnum, IsInt, Min } from 'class-validator';
+import { IsDateString, IsEnum,IsOptional, IsInt, Min, Max } from 'class-validator';
 
 export enum MeetingType {
   ONLINE = 'ONLINE',
@@ -28,4 +28,10 @@ export class BaseSessionDto {
 
   @IsEnum(TimeOfDay)
   timeOfDay: TimeOfDay;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(1440)
+  bufferMinutes?: number;
 }

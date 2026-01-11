@@ -1,44 +1,38 @@
-import { Controller, Get, Req, UseGuards } from '@nestjs/common';
+import { Controller, Get, Query, Req, UseGuards } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 
+import { Role } from '@prisma/client';
 import { AuthService } from './auth.service';
-import { GoogleAuthGuard } from './google-auth.guard';
+
 
 @Controller('auth')
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
-  /**
-   * Doctor login
-   * GET /auth/doctor/google
-   */
-  @Get('doctor/google')
-  @UseGuards(GoogleAuthGuard)
-  doctorGoogleLogin(@Req() req: any) {
-    // Role will be injected by the guard from req.query.role
-    // We'll set it here so no query param is needed.
-    req.query.role = 'DOCTOR';
-    return;
-  }
 
-  /**
-   * Patient login
-   * GET /auth/patient/google
-   */
-  @Get('patient/google')
-  @UseGuards(GoogleAuthGuard)
-  patientGoogleLogin(@Req() req: any) {
-    req.query.role = 'PATIENT';
-    return;
-  }
-
-  /**
-   * Shared callback
-   * GET /auth/google/callback
-   */
-  @Get('google/callback')
+  // GET /auth/google?role=DOCTOR|PATIENT
+  // This triggers the Google OAuth redirect.
+  @Get('google')
   @UseGuards(AuthGuard('google'))
-  async googleCallback(@Req() req: any) {
-    return this.authService.googleLogin(req.user);
+  googleLogin(@Query('role') role?: string) {
+    return { message: 'Redirecting to Google...', role: role ?? Role.PATIENT };
   }
+
+  // GET /auth/google/callback?role=DOCTOR|PATIENT
+  @Get('google/callback')
+@UseGuards(AuthGuard('google'))
+async googleCallback(@Req() req: any, @Query('role') role?: string) {
+  const resolvedRole =
+    role === 'DOCTOR' ? Role.DOCTOR :
+    role === 'PATIENT' ? Role.PATIENT :
+    undefined;
+
+  // fallback only if strategy didn't set it
+  if (resolvedRole && !req.user?.role) {
+    req.user.role = resolvedRole;
+  }
+
+  return this.authService.googleLogin(req.user);
+}
+
 }

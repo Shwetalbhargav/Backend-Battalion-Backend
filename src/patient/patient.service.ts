@@ -46,12 +46,7 @@ export class PatientService {
 
         userId,
         gender: (dto as any).gender ?? null,
-        dob: (dto as any).dob ? new Date((dto as any).dob) : null,
-
-        userId: dto.userId,
-        gender: (dto as any).gender ?? null,
-        dob: (dto as any).dob ?? null,
-
+        dob: (dto as any).dob ? new Date((dto as any).dob) : null,  
         bloodGroup: (dto as any).bloodGroup ?? null,
         phone: (dto as any).phone ?? null,
       },
@@ -65,12 +60,6 @@ export class PatientService {
     });
   }
 
-
-  async findOne(id: number | string) {
-    const patientId = this.toIntId(id, 'id');
-    const patient = await this.prisma.patient.findUnique({
-      where: { id: patientId },
-
   async findOne(id: number) {
     const p = await this.prisma.patient.findUnique({
       where: { id },
@@ -82,13 +71,11 @@ export class PatientService {
   }
 
 
-  async update(id: number | string, dto: UpdatePatientDto) {
-    await this.findOne(id);
-    const patientId = this.toIntId(id, 'id');
 
 
   async update(id: number, dto: UpdatePatientDto) {
     await this.findOne(id);
+    const patientId = Number(id);
 
     return this.prisma.patient.update({
       where: { id: patientId },
@@ -98,43 +85,17 @@ export class PatientService {
         dob: (dto as any).dob ? new Date((dto as any).dob) : undefined,
         bloodGroup: (dto as any).bloodGroup ?? undefined,
         phone: (dto as any).phone ?? undefined,
-        userId: (dto as any).userId ? this.toIntId((dto as any).userId, 'userId') : undefined,
-
-        dob: (dto as any).dob ?? undefined,
-        bloodGroup: (dto as any).bloodGroup ?? undefined,
-        phone: (dto as any).phone ?? undefined,
+        userId: (dto as any).userId ? this.toIntId((dto as any).userId, 'userId') : undefined,     
 
       },
     });
   }
-
-
-  async remove(id: number | string) {
-    await this.findOne(id);
-    const patientId = this.toIntId(id, 'id');
-
-    return this.prisma.patient.delete({
-      where: { id: patientId },
-
   async remove(id: number) {
     await this.findOne(id);
     return this.prisma.patient.delete({ where: { id } });
   }
 
-  // ✅ FIX: userId is Int => number
-  async ensurePatientProfile(userId: number) {
-    const existing = await this.prisma.patient.findUnique({ where: { userId } });
-    if (existing) return existing;
-
-    return this.prisma.patient.create({
-      data: {
-        userId,
-        gender: null,
-        dob: null,
-        bloodGroup: null,
-        phone: null,
-      },
-
-    });
-  }
+  
+  
 }
+  

@@ -10,6 +10,7 @@ import {
   Post,
   Query,
   Req,
+  UseGuards
 } from '@nestjs/common';
 import { DoctorService } from './doctor.service';
 import { CreateDoctorDto } from './dto/create-doctor.dto';
@@ -26,7 +27,7 @@ export class DoctorController {
   // -----------------------------
 
   @Post()
-  @DoctorOnly()
+   @UseGuards(DoctorOnly)
   create(@Req() req: any, @Body() dto: CreateDoctorDto) {
     // enforce doctor can only create their own profile
     return this.doctorService.create(req.user.id, dto);
@@ -43,13 +44,13 @@ export class DoctorController {
   }
 
   @Patch(':id')
-  @DoctorOnly()
+  
   update(@Req() req: any, @Param('id', ParseIntPipe) id: number, @Body() dto: UpdateDoctorDto) {
     return this.doctorService.updateAsDoctor(req.user.id, id, dto);
   }
 
   @Delete(':id')
-  @DoctorOnly()
+    @UseGuards(DoctorOnly)
   remove(@Req() req: any, @Param('id', ParseIntPipe) id: number) {
     return this.doctorService.removeAsDoctor(req.user.id, id);
   }
@@ -59,19 +60,19 @@ export class DoctorController {
   // -----------------------------------
 
   @Get('me/specialties')
-  @DoctorOnly()
+  @UseGuards(DoctorOnly)
   listMySpecialties(@Req() req: any) {
     return this.doctorService.listMySpecialties(req.user.id);
   }
 
   @Post('me/specialties/:specialtyId')
-  @DoctorOnly()
+  @UseGuards(DoctorOnly)
   addSpecialtyToMe(@Req() req: any, @Param('specialtyId', ParseIntPipe) specialtyId: number) {
     return this.doctorService.addSpecialtyToMe(req.user.id, specialtyId);
   }
 
   @Delete('me/specialties/:specialtyId')
-  @DoctorOnly()
+  @UseGuards(DoctorOnly)
   removeSpecialtyFromMe(@Req() req: any, @Param('specialtyId', ParseIntPipe) specialtyId: number) {
     return this.doctorService.removeSpecialtyFromMe(req.user.id, specialtyId);
   }
@@ -81,19 +82,19 @@ export class DoctorController {
   // -----------------------------------
 
   @Get('me/services')
-  @DoctorOnly()
+ @UseGuards(DoctorOnly)
   listMyServices(@Req() req: any) {
     return this.doctorService.listMyServices(req.user.id);
   }
 
   @Post('me/services/:serviceId')
-  @DoctorOnly()
+  @UseGuards(DoctorOnly)
   addServiceToMe(@Req() req: any, @Param('serviceId', ParseIntPipe) serviceId: number) {
     return this.doctorService.addServiceToMe(req.user.id, serviceId);
   }
 
   @Delete('me/services/:serviceId')
-  @DoctorOnly()
+  @UseGuards(DoctorOnly)
   removeServiceFromMe(@Req() req: any, @Param('serviceId', ParseIntPipe) serviceId: number) {
     return this.doctorService.removeServiceFromMe(req.user.id, serviceId);
   }

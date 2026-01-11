@@ -1,4 +1,12 @@
-import { IsBoolean, IsInt, IsISO8601, IsOptional, IsString, Min, Max } from 'class-validator';
+import {
+  IsBoolean,
+  IsInt,
+  IsISO8601,
+  IsOptional,
+  IsString,
+  Min,
+  Max,
+} from 'class-validator';
 import { MeetingType, TimeOfDay } from '@prisma/client';
 
 export class UpsertSessionOverrideDto {
