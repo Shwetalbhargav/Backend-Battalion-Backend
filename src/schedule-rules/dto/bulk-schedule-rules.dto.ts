@@ -14,7 +14,12 @@ import {
   IsObject,
 } from 'class-validator';
 import { Type } from 'class-transformer';
-import { DayOfWeek, MeetingType, SchedulingStrategy, TimeOfDay } from '@prisma/client';
+import {
+  DayOfWeek,
+  MeetingType,
+  SchedulingStrategy,
+  TimeOfDay,
+} from '@prisma/client';
 
 export class BulkSessionDto {
   @IsEnum(TimeOfDay)
@@ -77,12 +82,20 @@ export class BulkScheduleRulesDto {
   /**
    * WAVE (simple mode): requires waveEveryMin + waveCapacity if wavePattern not provided
    */
-  @ValidateIf((o) => (o.strategy ?? SchedulingStrategy.STREAM) === SchedulingStrategy.WAVE && !o.wavePattern)
+  @ValidateIf(
+    (o) =>
+      (o.strategy ?? SchedulingStrategy.STREAM) === SchedulingStrategy.WAVE &&
+      !o.wavePattern,
+  )
   @IsInt()
   @Min(5)
   waveEveryMin?: number;
 
-  @ValidateIf((o) => (o.strategy ?? SchedulingStrategy.STREAM) === SchedulingStrategy.WAVE && !o.wavePattern)
+  @ValidateIf(
+    (o) =>
+      (o.strategy ?? SchedulingStrategy.STREAM) === SchedulingStrategy.WAVE &&
+      !o.wavePattern,
+  )
   @IsInt()
   @Min(1)
   waveCapacity?: number;
@@ -91,7 +104,10 @@ export class BulkScheduleRulesDto {
    * WAVE (pattern mode): JSON array like:
    * [{ offsetMin: 0, capacity: 3 }, { offsetMin: 15, capacity: 1 }]
    */
-  @ValidateIf((o) => (o.strategy ?? SchedulingStrategy.STREAM) === SchedulingStrategy.WAVE)
+  @ValidateIf(
+    (o) =>
+      (o.strategy ?? SchedulingStrategy.STREAM) === SchedulingStrategy.WAVE,
+  )
   @IsOptional()
   @IsObject()
   wavePattern?: Record<string, any>;

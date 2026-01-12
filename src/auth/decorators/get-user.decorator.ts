@@ -7,12 +7,23 @@ export interface UserPayload {
   isVerified: boolean;
 }
 
+type RequestWithUser = {
+  user?: unknown;
+};
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
 export const GetUser = createParamDecorator(
   (data: keyof UserPayload | undefined, ctx: ExecutionContext) => {
-    const request = ctx.switchToHttp().getRequest();
-    const user = request.user;
+    const request = ctx.switchToHttp().getRequest<RequestWithUser>();
+    const user: unknown = request.user;
 
-    return data ? user?.[data] : user;
+    if (!data) return user;
+
+    if (!isRecord(user)) return undefined;
+
+    return user[data as string];
   },
 );
-

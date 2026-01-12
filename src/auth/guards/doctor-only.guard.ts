@@ -1,7 +1,19 @@
-import { applyDecorators, UseGuards } from '@nestjs/common';
-import { Roles } from '../roles.decorator';
-import { JwtAuthGuard } from './jwt-auth.guard';
-import { RolesGuard } from './roles.guard';
+import { CanActivate, ExecutionContext, ForbiddenException, Injectable, UnauthorizedException } from '@nestjs/common';
+import { Role } from '@prisma/client';
 
-export const DoctorOnly = () =>
-  applyDecorators(UseGuards(JwtAuthGuard, RolesGuard), Roles('DOCTOR'));
+@Injectable()
+export class DoctorOnly implements CanActivate {
+  canActivate(context: ExecutionContext): boolean {
+    const req = context.switchToHttp().getRequest();
+
+    if (!req.user) {
+      throw new UnauthorizedException('Missing authentication');
+    }
+
+    if (req.user.role !== Role.DOCTOR) {
+      throw new ForbiddenException('Doctor access only');
+    }
+
+    return true;
+  }
+}

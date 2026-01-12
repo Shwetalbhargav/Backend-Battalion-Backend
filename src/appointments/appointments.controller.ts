@@ -17,14 +17,47 @@ import { CancelAppointmentDto } from './dto/cancel-appointment.dto';
 import { DoctorCancelAppointmentDto } from './dto/doctor-cancel-appointment.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
-import { Roles } from '../auth/roles.decorator';
+import { Roles } from "../auth/decorators/roles.decorator";
 import { Role } from '@prisma/client';
+import { AppointmentRescheduleOffersService } from '../reschedule-offers/appointment-reschedule-offers.service';
+import { IsInt } from 'class-validator';
+import { Type } from 'class-transformer';
+
+
+type AuthUser = { id: number | string };
+type AuthReqShape = { user: AuthUser };
+class AcceptRescheduleDto {
+  @Type(() => Number)
+  @IsInt()
+  slotId!: number;
+}
+
+
+
+function hasAuthShape(value: unknown): value is AuthReqShape {
+  if (typeof value !== 'object' || value === null) return false;
+  const v = value as Record<string, unknown>;
+  if (typeof v.user !== 'object' || v.user === null) return false;
+  const user = v.user as Record<string, unknown>;
+  return typeof user.id === 'number' || typeof user.id === 'string';
+}
+
+function getUserId(req: unknown): number {
+  if (!hasAuthShape(req)) {
+    throw new Error('Request user is missing');
+  }
+  const id = Number(req.user.id);
+  if (!Number.isFinite(id)) {
+    throw new Error('Invalid user id');
+  }
+  return id;
+}
 
 @Controller('appointments')
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class AppointmentsController {
-  constructor(
-    private readonly appointmentsService: AppointmentsService,
+  constructor(private readonly appointmentsService: AppointmentsService,
+    private readonly rescheduleOffersService: AppointmentRescheduleOffersService,
   ) {}
 
   /* =====================================================
@@ -34,9 +67,9 @@ export class AppointmentsController {
   // Book appointment
   @Post()
   @Roles(Role.PATIENT)
-  bookAppointment(@Req() req, @Body() dto: CreateAppointmentDto) {
+  bookAppointment(@Req() req: unknown, @Body() dto: CreateAppointmentDto) {
     return this.appointmentsService.bookAppointment(
-      req.user.id,
+      getUserId(req),
       dto.slotId,
       dto.note,
     );
@@ -45,20 +78,20 @@ export class AppointmentsController {
   // View my appointments
   @Get('my')
   @Roles(Role.PATIENT)
-  getMyAppointments(@Req() req) {
-    return this.appointmentsService.getMyAppointments(req.user.id);
+  getMyAppointments(@Req() req: unknown) {
+    return this.appointmentsService.getMyAppointments(getUserId(req));
   }
 
   // Cancel appointment
   @Patch(':id/cancel')
   @Roles(Role.PATIENT)
   cancelAppointment(
-    @Req() req,
+    @Req() req: unknown,
     @Param('id', ParseIntPipe) id: number,
     @Body() dto: CancelAppointmentDto,
   ) {
     return this.appointmentsService.cancelAppointmentByPatient(
-      req.user.id,
+      getUserId(req),
       id,
       dto.reason,
     );
@@ -67,14 +100,8 @@ export class AppointmentsController {
   // Delete appointment (only if cancelled)
   @Delete(':id')
   @Roles(Role.PATIENT)
-  deleteAppointment(
-    @Req() req,
-    @Param('id', ParseIntPipe) id: number,
-  ) {
-    return this.appointmentsService.deleteAppointmentByPatient(
-      req.user.id,
-      id,
-    );
+  deleteAppointment(@Req() req: unknown, @Param('id', ParseIntPipe) id: number) {
+    return this.appointmentsService.deleteAppointmentByPatient(getUserId(req), id);
   }
 
   /* =====================================================
@@ -84,35 +111,56 @@ export class AppointmentsController {
   // View my appointments
   @Get('doctor/my')
   @Roles(Role.DOCTOR)
-  getDoctorAppointments(@Req() req) {
-    return this.appointmentsService.getDoctorAppointments(req.user.id);
+  getDoctorAppointments(@Req() req: unknown) {
+    return this.appointmentsService.getDoctorAppointments(getUserId(req));
   }
 
   // Confirm appointment
   @Patch(':id/confirm')
   @Roles(Role.DOCTOR)
-  confirmAppointment(
-    @Req() req,
-    @Param('id', ParseIntPipe) id: number,
-  ) {
-    return this.appointmentsService.confirmAppointment(
-      req.user.id,
-      id,
-    );
+  confirmAppointment(@Req() req: unknown, @Param('id', ParseIntPipe) id: number) {
+    return this.appointmentsService.confirmAppointment(getUserId(req), id);
   }
 
   // Cancel appointment (doctor)
   @Patch(':id/doctor-cancel')
   @Roles(Role.DOCTOR)
   cancelAppointmentByDoctor(
-    @Req() req,
+    @Req() req: unknown,
     @Param('id', ParseIntPipe) id: number,
     @Body() dto: DoctorCancelAppointmentDto,
   ) {
     return this.appointmentsService.cancelAppointmentByDoctor(
-      req.user.id,
+      getUserId(req),
       id,
       dto.reason,
     );
   }
+
+  @Post(':id/reschedule/accept')
+@Roles(Role.PATIENT)
+acceptRescheduleOffer(
+  @Req() req: unknown,
+  @Param('id', ParseIntPipe) appointmentId: number,
+  @Body() dto: AcceptRescheduleDto,
+) {
+  return this.rescheduleOffersService.acceptOffer({
+    appointmentId,
+    patientId: getUserId(req),
+    slotId: dto.slotId,
+  });
+}
+
+@Post(':id/reschedule/decline')
+@Roles(Role.PATIENT)
+declineRescheduleOffer(
+  @Req() req: unknown,
+  @Param('id', ParseIntPipe) appointmentId: number,
+) {
+  return this.rescheduleOffersService.declineOffer({
+    appointmentId,
+    patientId: getUserId(req),
+  });
+}
+
 }

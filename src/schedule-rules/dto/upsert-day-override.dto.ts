@@ -1,4 +1,10 @@
-import { IsBoolean, IsInt, IsISO8601, IsOptional, IsString } from 'class-validator';
+import {
+  IsBoolean,
+  IsInt,
+  IsISO8601,
+  IsOptional,
+  IsString,
+} from 'class-validator';
 
 export class UpsertDayOverrideDto {
   @IsInt()

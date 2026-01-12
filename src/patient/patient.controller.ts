@@ -1,4 +1,14 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, Req } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Body,
+  Patch,
+  Param,
+  Delete,
+  Req,
+  UseGuards
+} from '@nestjs/common';
 import { PatientService } from './patient.service';
 import { CreatePatientDto } from './dto/create-patient.dto';
 import { UpdatePatientDto } from './dto/update-patient.dto';
@@ -12,7 +22,7 @@ export class PatientController {
   // ✅ Only PATIENT users can create patient profile
   // ✅ userId comes from JWT (Google OAuth login)
   @Post()
-  @PatientOnly()
+  @UseGuards(PatientOnly)
   create(@Req() req: any, @Body() dto: CreatePatientDto) {
     return this.patientService.create({
       ...dto,
@@ -32,10 +42,7 @@ export class PatientController {
   }
 
   @Patch(':id')
-  update(
-    @Param('id', ParseIntPipe) id: number,
-    @Body() dto: UpdatePatientDto,
-  ) {
+  update(@Param('id', ParseIntPipe) id: number, @Body() dto: UpdatePatientDto) {
     return this.patientService.update(id, dto);
   }
 

@@ -1,10 +1,18 @@
-import { Body, Controller, Post } from '@nestjs/common';
+import { Body, Controller, Post, UsePipes, ValidationPipe } from '@nestjs/common';
 import { ElasticSchedulingService } from './elastic-scheduling.service';
 import { ExpandSessionDto } from './dto/expand-session.dto';
 import { ShrinkSessionDto } from './dto/shrink-session.dto';
 import { UpdateCapacityDto } from './dto/update-capacity.dto';
 
-@Controller('api/v1/elastic-scheduling')
+@UsePipes(
+  new ValidationPipe({
+    transform: true,
+    whitelist: true,            // strips unknown properties
+    forbidNonWhitelisted: true, // throws if unknown props exist
+    forbidUnknownValues: true,
+  }),
+)
+@Controller('elastic-scheduling')
 export class ElasticSchedulingController {
   constructor(private readonly service: ElasticSchedulingService) {}
 
@@ -13,10 +21,9 @@ export class ElasticSchedulingController {
    * POST /api/v1/elastic-scheduling/session/expand
    */
   @Post('session/expand')
-        expandSession(@Body() dto: ExpandSessionDto) {
-  return this.service.expandSession(dto);
-}
-
+  expandSession(@Body() dto: ExpandSessionDto) {
+    return this.service.expandSession(dto);
+  }
 
   /**
    * Iteration 2 + Iteration 4: Shrink session (WAVE / STREAM)

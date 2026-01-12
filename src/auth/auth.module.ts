@@ -1,43 +1,42 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
+import { JwtModule } from '@nestjs/jwt';
 import { PassportModule } from '@nestjs/passport';
-import { JwtModule, JwtModuleOptions } from '@nestjs/jwt';
 import { ConfigModule, ConfigService } from '@nestjs/config';
+import { StringValue } from 'ms';
 
-import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
-import { GoogleStrategy } from './google.strategy';
-import { JwtStrategy } from './jwt.strategy';
-
-import { UsersModule } from '../users/users.module';
+import { AuthController } from './auth.controller';
+import { PrismaModule } from '../prisma/prisma.module';
 import { DoctorModule } from '../doctor/doctor.module';
 import { PatientModule } from '../patient/patient.module';
 
 @Module({
   imports: [
-    ConfigModule,
-    PassportModule,
-    UsersModule,
-    DoctorModule,
-    PatientModule,
+    PrismaModule,
+    PassportModule.register({ defaultStrategy: 'jwt' }),
+    ConfigModule, // ✅ REQUIRED
     JwtModule.registerAsync({
-      imports: [ConfigModule],
+      imports: [ConfigModule], // ✅ REQUIRED
       inject: [ConfigService],
+      useFactory: (configService: ConfigService) => {
+        const secret =
+          configService.get<string>('JWT_SECRET') ?? 'secret';
 
-      useFactory: (cfg: ConfigService): JwtModuleOptions => ({
-        secret: cfg.get<string>('JWT_SECRET') ?? 'dev_secret_change_me',
-        signOptions: {
-          // ✅ Cast to satisfy the JwtModuleOptions type
-          expiresIn: (cfg.get<string>('JWT_EXPIRES_IN') ?? '7d') as any,
-        },
+        const expiresIn =
+          (configService.get<string>('JWT_EXPIRES_IN') as StringValue | undefined) ??
+          ('1d' as StringValue);
 
-      useFactory: (cfg: ConfigService) => ({
-        secret: cfg.get('JWT_SECRET'),
-        signOptions: { expiresIn: cfg.get('JWT_EXPIRES_IN') ?? '7d' },
-
-      }),
+        return {
+          secret,
+          signOptions: { expiresIn },
+        };
+      },
     }),
+    forwardRef(() => DoctorModule),
+    PatientModule,
   ],
   controllers: [AuthController],
-  providers: [AuthService, GoogleStrategy, JwtStrategy],
+  providers: [AuthService],
+  exports: [AuthService, JwtModule], // ✅ export JwtModule if other modules need it
 })
 export class AuthModule {}
