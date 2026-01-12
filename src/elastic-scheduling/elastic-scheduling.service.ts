@@ -3,6 +3,8 @@ import { PrismaService } from '../prisma/prisma.service';
 import { ExpandSessionDto } from './dto/expand-session.dto';
 import { ShrinkSessionDto } from './dto/shrink-session.dto';
 import { UpdateCapacityDto } from './dto/update-capacity.dto';
+import {AppointmentStatus, MeetingType, TimeOfDay } from '@prisma/client';
+
 
 /**
  * Normalizes a YYYY-MM-DD string to a UTC day start DateTime.
@@ -17,6 +19,20 @@ function dayStartUtcFromISO(dateISO: string): Date {
 
 function minutesToUtcDateTime(dayStartUtc: Date, minuteOfDay: number): Date {
   return new Date(dayStartUtc.getTime() + minuteOfDay * 60_000);
+}
+
+function parseMeetingType(value: string): MeetingType {
+  if (!Object.values(MeetingType).includes(value as MeetingType)) {
+    throw new BadRequestException(`Invalid meetingType: ${value}`);
+  }
+  return value as MeetingType;
+}
+
+function parseTimeOfDay(value: string): TimeOfDay {
+  if (!Object.values(TimeOfDay).includes(value as TimeOfDay)) {
+    throw new BadRequestException(`Invalid timeOfDay: ${value}`);
+  }
+  return value as TimeOfDay;
 }
 
 @Injectable()
@@ -37,18 +53,20 @@ export class ElasticSchedulingService {
 
   private async getSessionOrThrow(dto: {
     doctorId: number;
-    date: string;
-    meetingType: any;
-    timeOfDay: any;
+    date: Date;
+    meetingType: MeetingType;
+   timeOfDay: TimeOfDay;
+    locationKey?: string;
   }) {
-    const day = dayStartUtcFromISO(dto.date);
+    
 
     const session = await this.prisma.availabilitySession.findFirst({
       where: {
         doctorId: dto.doctorId,
-        date: day,
+        date: dto.date,
         meetingType: dto.meetingType,
         timeOfDay: dto.timeOfDay,
+        locationKey: dto.locationKey ?? 'NONE',
       },
     });
 
@@ -128,8 +146,16 @@ export class ElasticSchedulingService {
   async expandSession(dto: ExpandSessionDto) {
     this.assertMinuteWindow(dto.newStartMinute, dto.newEndMinute);
 
-    const day = dayStartUtcFromISO(dto.date);
-    const session = await this.getSessionOrThrow(dto);
+   const day = dayStartUtcFromISO(dto.date);
+
+        const session = await this.getSessionOrThrow({
+          doctorId: dto.doctorId,
+          date: day,
+          meetingType: parseMeetingType(dto.meetingType),
+          timeOfDay: parseTimeOfDay(dto.timeOfDay),
+          locationKey: dto.locationKey,
+        });
+
 
     // Persist override (date+session scoped)
     await this.upsertOverride({
@@ -211,7 +237,15 @@ export class ElasticSchedulingService {
     this.assertMinuteWindow(dto.newStartMinute, dto.newEndMinute);
 
     const day = dayStartUtcFromISO(dto.date);
-    const session = await this.getSessionOrThrow(dto);
+
+    const session = await this.getSessionOrThrow({
+      doctorId: dto.doctorId,
+      date: day,
+      meetingType: parseMeetingType(dto.meetingType),
+      timeOfDay: parseTimeOfDay(dto.timeOfDay),
+      locationKey: dto.locationKey,
+    });
+
 
     await this.upsertOverride({
       doctorId: session.doctorId,
@@ -288,4 +322,34 @@ export class ElasticSchedulingService {
       newCapacityPerSlot: dto.newCapacityPerSlot,
     };
   }
+
+   /**
+   NEW — confirmed recurring → custom reflection helper
+   */
+
+   async getConfirmedAppointmentsForSessionKey(params: {
+  doctorId: number;
+  date: Date;
+  meetingType: MeetingType;
+  timeOfDay: TimeOfDay;
+  locationKey?: string;
+}) {
+  return this.prisma.appointment.findMany({
+    where: {
+      status: AppointmentStatus.CONFIRMED,
+      slot: {
+        session: {
+          doctorId: params.doctorId,
+          date: params.date,
+          meetingType: params.meetingType,
+          timeOfDay: params.timeOfDay,
+          locationKey: params.locationKey ?? 'NONE',
+        },
+      },
+    },
+    include: { slot: true },
+  });
+}
+
+
 }
