@@ -300,7 +300,7 @@ private async normalizeSlotState(slotId: number) {
 
   
 
-  // ... keep all your existing methods unchanged ...
+ 
 
   /**
    * GET /appointments/:id/reschedule-offers
