@@ -5,7 +5,9 @@ import { AppointmentStatus, SlotStatus, SchedulingStrategy } from '@prisma/clien
 import { ExpandSessionDto } from './dto/expand-session.dto';
 import { ShrinkSessionDto } from './dto/shrink-session.dto';
 import { UpdateCapacityDto } from './dto/update-capacity.dto';
+import {AppointmentStatus, MeetingType, TimeOfDay } from '@prisma/client';
 import { AppointmentRescheduleOffersService } from '../reschedule-offers/appointment-reschedule-offers.service';
+
 
 function dayStartUtcFromISO(dateISO: string): Date {
   const [y, m, d] = dateISO.split('-').map(Number);
@@ -24,6 +26,20 @@ function isSameUtcDay(a: Date, b: Date): boolean {
     a.getUTCMonth() === b.getUTCMonth() &&
     a.getUTCDate() === b.getUTCDate()
   );
+}
+
+function parseMeetingType(value: string): MeetingType {
+  if (!Object.values(MeetingType).includes(value as MeetingType)) {
+    throw new BadRequestException(`Invalid meetingType: ${value}`);
+  }
+  return value as MeetingType;
+}
+
+function parseTimeOfDay(value: string): TimeOfDay {
+  if (!Object.values(TimeOfDay).includes(value as TimeOfDay)) {
+    throw new BadRequestException(`Invalid timeOfDay: ${value}`);
+  }
+  return value as TimeOfDay;
 }
 
 @Injectable()
@@ -55,18 +71,20 @@ private buildUtcDateTime(dayStartUtc: Date, minuteOfDay: number): Date {
 
   private async getSessionOrThrow(dto: {
     doctorId: number;
-    date: string;
-    meetingType: any;
-    timeOfDay: any;
+    date: Date;
+    meetingType: MeetingType;
+   timeOfDay: TimeOfDay;
+    locationKey?: string;
   }) {
-    const day = dayStartUtcFromISO(dto.date);
+    
 
     const session = await this.prisma.availabilitySession.findFirst({
       where: {
         doctorId: dto.doctorId,
-        date: day,
+        date: dto.date,
         meetingType: dto.meetingType,
         timeOfDay: dto.timeOfDay,
+        locationKey: dto.locationKey ?? 'NONE',
       },
     });
 
@@ -180,8 +198,16 @@ private buildUtcDateTime(dayStartUtc: Date, minuteOfDay: number): Date {
     // unchanged from your file
     this.assertMinuteWindow(dto.newStartMinute, dto.newEndMinute);
 
-    const day = dayStartUtcFromISO(dto.date);
-    const session = await this.getSessionOrThrow(dto);
+   const day = dayStartUtcFromISO(dto.date);
+
+        const session = await this.getSessionOrThrow({
+          doctorId: dto.doctorId,
+          date: day,
+          meetingType: parseMeetingType(dto.meetingType),
+          timeOfDay: parseTimeOfDay(dto.timeOfDay),
+          locationKey: dto.locationKey,
+        });
+
 
       // pick a single buffer source of truth (dto override OR default)
       const bufferMinutes = dto.bufferMinutes ?? 15;
@@ -345,7 +371,15 @@ return {
     this.assertMinuteWindow(dto.newStartMinute, dto.newEndMinute);
 
     const day = dayStartUtcFromISO(dto.date);
-    const session = await this.getSessionOrThrow(dto);
+
+    const session = await this.getSessionOrThrow({
+      doctorId: dto.doctorId,
+      date: day,
+      meetingType: parseMeetingType(dto.meetingType),
+      timeOfDay: parseTimeOfDay(dto.timeOfDay),
+      locationKey: dto.locationKey,
+    });
+
 
     const bufferMinutes = dto.bufferMinutes ?? 15;
     await this.assertSessionActiveOrThrow(session, bufferMinutes);
@@ -695,6 +729,38 @@ return {
       expiresAt,
       offerGroups: persisted,
     };
+  }
+
+   /**
+   NEW — confirmed recurring → custom reflection helper
+   */
+
+   async getConfirmedAppointmentsForSessionKey(params: {
+  doctorId: number;
+  date: Date;
+  meetingType: MeetingType;
+  timeOfDay: TimeOfDay;
+  locationKey?: string;
+}) {
+  return this.prisma.appointment.findMany({
+    where: {
+      status: AppointmentStatus.CONFIRMED,
+      slot: {
+        session: {
+          doctorId: params.doctorId,
+          date: params.date,
+          meetingType: params.meetingType,
+          timeOfDay: params.timeOfDay,
+          locationKey: params.locationKey ?? 'NONE',
+        },
+      },
+    },
+    include: { slot: true },
   });
+}
+
+
+  });
+
 }
 }

@@ -240,7 +240,13 @@ model DoctorScheduleRule {
   waveCapacity Int? // e.g. 4  (how many patients in that wave block)
 
   // for advanced wave patterns
+
+  wavePattern      Json?  // Postgres jsonb (Prisma Json)
+  
+  
+
   wavePattern Json? // Postgres jsonb (Prisma Json)
+
 
   @@unique([doctorId, meetingType, dayOfWeek, timeOfDay, startMinute, endMinute])
 }
@@ -370,6 +376,10 @@ model Appointment {
 
   confirmedAt DateTime?
   cancelledAt DateTime?
+
+  overrideDate        DateTime?
+  overrideStartMinute Int?
+  overrideEndMinute   Int?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
