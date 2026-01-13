@@ -8,8 +8,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import {
-  RescheduleOfferStatus,
-  RescheduleGroupStatus,
+  RescheduleOfferStatus,  
   SlotStatus,
   AppointmentStatus,Role,
 } from '@prisma/client';
@@ -458,11 +457,6 @@ private async normalizeSlotState(slotId: number) {
   return { success: true };
 }
 
-}
-
-  
-
- 
 
   /**
    * GET /appointments/:id/reschedule-offers
@@ -645,11 +639,11 @@ private async normalizeSlotState(slotId: number) {
       };
     });
   }
-
+}
 
 
   
 
 
-}
+
 
