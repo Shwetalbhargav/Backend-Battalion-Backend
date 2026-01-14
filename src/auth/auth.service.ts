@@ -1,86 +1,34 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
-import { Role, User } from '@prisma/client';
-
-import { PrismaService } from '../prisma/prisma.service';
-import { DoctorService } from '../doctor/doctor.service';
-import { PatientService } from '../patient/patient.service';
+import { Role } from '@prisma/client';
+import { UsersService } from '../users/users.service';
 
 @Injectable()
 export class AuthService {
   constructor(
-    private readonly prisma: PrismaService,
+    private readonly usersService: UsersService,
     private readonly jwt: JwtService,
-    private readonly doctors: DoctorService,
-    private readonly patients: PatientService,
   ) {}
 
-  async findOrCreateGoogleUser(input: {
-    email: string;
-    name?: string;
-    providerId: string;
-    role: Role;
-  }): Promise<User> {
-    const { email, name, providerId, role } = input;
+  async loginWithGoogle(
+    googleUser: { email: string; name: string | null; providerId: string },
+    stateRole: string,
+  ) {
+    const role: Role = stateRole === 'DOCTOR' ? Role.DOCTOR : Role.PATIENT;
 
-    if (!email || !providerId) {
-      throw new BadRequestException('Invalid Google profile');
-    }
-
-    const existing = await this.prisma.user.findFirst({
-      where: {
-        OR: [
-          { provider: 'google', providerId },
-          { email },
-        ],
-      },
+    const user = await this.usersService.findOrCreateGoogleUser({
+      email: googleUser.email,
+      name: googleUser.name ?? '',
+      providerId: googleUser.providerId,
+      role,
     });
 
-    const user = existing
-      ? await this.prisma.user.update({
-          where: { id: existing.id },
-          data: {
-            name,
-            provider: 'google',
-            providerId,
-            // keep existing role if already set
-            role: existing.role ?? role,
-          },
-        })
-      : await this.prisma.user.create({
-          data: {
-            email,
-            name,
-            provider: 'google',
-            providerId,
-            role,
-          },
-        });
-
-    await this.ensureRoleProfile(user.id, user.role);
-    return user;
-  }
-
-  private async ensureRoleProfile(userId: number, role: Role) {
-    if (role === Role.DOCTOR) {
-      await this.doctors.ensureDoctorProfile(userId);
-    } else {
-      await this.patients.ensurePatientProfile(userId);
-    }
-  }
-
-  async signJwt(user: Pick<User, 'id' | 'email' | 'role'>) {
-    return this.jwt.signAsync({
+    const token = await this.jwt.signAsync({
       sub: user.id,
       email: user.email,
       role: user.role,
     });
-  }
 
-  async googleLogin(user: User) {
-    return {
-      token: await this.signJwt(user),
-      user,
-    };
+    return { token, user };
   }
 }

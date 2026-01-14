@@ -2,15 +2,7 @@
 import { MeetingType, TimeOfDay } from '@prisma/client';
 import { IsDateString, IsEnum,IsOptional, IsInt, Min, Max } from 'class-validator';
 
-export enum MeetingType {
-  ONLINE = 'ONLINE',
-  OFFLINE = 'OFFLINE',
-}
 
-export enum TimeOfDay {
-  MORNING = 'MORNING',
-  EVENING = 'EVENING',
-}
 
 export enum ElasticStrategy {
   WAVE = 'WAVE',

@@ -134,10 +134,11 @@ private async normalizeSlotState(slotId: number) {
     try {
       const appointment = await tx.appointment.create({
         data: {
-          slotId: slot.id,
-          doctorId: slot.doctorId,
-          patientId,
-          note: opts?.note ?? null, // ✅ fixes your "note not in scope" error
+          status: AppointmentStatus.BOOKED,
+          note: opts?.note ?? null,
+          slot: { connect: { id: slot.id } },
+          doctor: { connect: { id: slot.doctorId } },
+          patient: { connect: { id: patientId } }, 
         },
         include: {
           slot: true,

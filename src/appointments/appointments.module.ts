@@ -4,10 +4,10 @@ import { AppointmentsController } from './appointments.controller';
 import { AppointmentsService } from './appointments.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { PrismaModule } from '../prisma/prisma.module';
-import { RescheduleOffersModule } from '../reschedule-offers/reschedule-offers.module';
+import { AppointmentRescheduleOffersModule } from '../reschedule-offers/reschedule-offers.module';
 
 @Module({
-  imports: [PrismaModule,RescheduleOffersModule,],
+  imports: [PrismaModule,AppointmentRescheduleOffersModule,],
   controllers: [AppointmentsController],
   providers: [AppointmentsService],
   exports: [AppointmentsService],
