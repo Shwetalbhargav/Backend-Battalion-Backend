@@ -1,10 +1,13 @@
 import { Module } from '@nestjs/common';
-import { PrismaModule } from '../prisma/prisma.module';
 import { AppointmentRescheduleOffersService } from './appointment-reschedule-offers.service';
+import { RescheduleAutoMoveWorker } from './workers/reschedule-auto-move.worker';
+import { PrismaModule } from '../prisma/prisma.module';
+import { AppointmentRescheduleOffersController } from './appointment-reschedule-offers.controller';
 
 @Module({
   imports: [PrismaModule],
-  providers: [AppointmentRescheduleOffersService],
-  exports: [AppointmentRescheduleOffersService], // ✅ key line
+  controllers: [AppointmentRescheduleOffersController],
+  providers: [AppointmentRescheduleOffersService, RescheduleAutoMoveWorker],
+  exports: [AppointmentRescheduleOffersService],
 })
-export class RescheduleOffersModule {}
+export class AppointmentRescheduleOffersModule {}

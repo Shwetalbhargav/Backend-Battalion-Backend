@@ -1,50 +1,36 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { PassportStrategy } from '@nestjs/passport';
-import { Strategy, Profile, VerifyCallback } from 'passport-google-oauth20';
-import { ConfigService } from '@nestjs/config';
-import type { Request } from 'express';
-
-type GoogleEmail = { value: string };
-type GooglePhoto = { value: string };
+import { Profile, Strategy, VerifyCallback } from 'passport-google-oauth20';
 
 @Injectable()
 export class GoogleStrategy extends PassportStrategy(Strategy, 'google') {
-  constructor(configService: ConfigService) {
+  constructor() {
     super({
-      clientID: configService.get<string>('GOOGLE_CLIENT_ID') ?? '',
-      clientSecret: configService.get<string>('GOOGLE_CLIENT_SECRET') ?? '',
-      callbackURL: configService.get<string>('GOOGLE_CALLBACK_URL') ?? '',
+      clientID: process.env.GOOGLE_CLIENT_ID!,
+      clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
+      callbackURL: process.env.GOOGLE_CALLBACK_URL!,
       scope: ['email', 'profile'],
-      passReqToCallback: true,
     });
   }
 
-  validate(
-    req: Request,
+  async validate(
     accessToken: string,
     refreshToken: string,
     profile: Profile,
     done: VerifyCallback,
-  ): void {
-    const emails = profile.emails as GoogleEmail[] | undefined;
-    const photos = profile.photos as GooglePhoto[] | undefined;
+  ) {
+    const email = profile.emails?.[0]?.value;
+    if (!email) {
+      return done(new UnauthorizedException('Google did not return an email'), false);
+    }
 
-    const role =
-      typeof req.query?.role === 'string'
-        ? req.query.role.toUpperCase()
-        : undefined;
-
-    const user = {
-      provider: 'google',
+    const userFromGoogle = {
+      email,
+      name: profile.displayName ?? null,
       providerId: profile.id,
-      email: emails?.[0]?.value ?? null,
-      firstName: profile.name?.givenName ?? null,
-      lastName: profile.name?.familyName ?? null,
-      photo: photos?.[0]?.value ?? null,
-      role,
-      accessToken,
+      picture: profile.photos?.[0]?.value ?? null,
     };
 
-    done(null, user);
+    return done(null, userFromGoogle);
   }
 }

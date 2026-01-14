@@ -8,8 +8,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import {
-  RescheduleOfferStatus,
-  RescheduleGroupStatus,
+  RescheduleOfferStatus,  
   SlotStatus,
   AppointmentStatus,Role,
 } from '@prisma/client';
@@ -135,10 +134,11 @@ private async normalizeSlotState(slotId: number) {
     try {
       const appointment = await tx.appointment.create({
         data: {
-          slotId: slot.id,
-          doctorId: slot.doctorId,
-          patientId,
-          note: opts?.note ?? null, // ✅ fixes your "note not in scope" error
+          status: AppointmentStatus.BOOKED,
+          note: opts?.note ?? null,
+          slot: { connect: { id: slot.id } },
+          doctor: { connect: { id: slot.doctorId } },
+          patient: { connect: { id: patientId } }, 
         },
         include: {
           slot: true,
@@ -458,11 +458,6 @@ private async normalizeSlotState(slotId: number) {
   return { success: true };
 }
 
-}
-
-  
-
- 
 
   /**
    * GET /appointments/:id/reschedule-offers
@@ -645,11 +640,11 @@ private async normalizeSlotState(slotId: number) {
       };
     });
   }
-
+}
 
 
   
 
 
-}
+
 

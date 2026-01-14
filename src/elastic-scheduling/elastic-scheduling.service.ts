@@ -5,7 +5,7 @@ import { AppointmentStatus, SlotStatus, SchedulingStrategy } from '@prisma/clien
 import { ExpandSessionDto } from './dto/expand-session.dto';
 import { ShrinkSessionDto } from './dto/shrink-session.dto';
 import { UpdateCapacityDto } from './dto/update-capacity.dto';
-import {AppointmentStatus, MeetingType, TimeOfDay } from '@prisma/client';
+import { MeetingType, TimeOfDay } from '@prisma/client';
 import { AppointmentRescheduleOffersService } from '../reschedule-offers/appointment-reschedule-offers.service';
 
 
@@ -375,8 +375,8 @@ return {
     const session = await this.getSessionOrThrow({
       doctorId: dto.doctorId,
       date: day,
-      meetingType: parseMeetingType(dto.meetingType),
-      timeOfDay: parseTimeOfDay(dto.timeOfDay),
+      meetingType: dto.meetingType,
+      timeOfDay: dto.timeOfDay,
       locationKey: dto.locationKey,
     });
 
@@ -540,7 +540,13 @@ return {
   }
 
   const day = dayStartUtcFromISO(dto.date);
-  const session = await this.getSessionOrThrow(dto);
+  const session = await this.getSessionOrThrow({
+      doctorId: dto.doctorId,
+      date: day,
+      meetingType: dto.meetingType,
+      timeOfDay: dto.timeOfDay,
+      locationKey: dto.locationKey,
+    });
 
   const bufferMinutes = dto.bufferMinutes ?? 15;
   await this.assertSessionActiveOrThrow(session, bufferMinutes);
@@ -729,29 +735,31 @@ return {
       expiresAt,
       offerGroups: persisted,
     };
-  }
+  });
+}
+  
 
    /**
    NEW — confirmed recurring → custom reflection helper
    */
 
    async getConfirmedAppointmentsForSessionKey(params: {
-  doctorId: number;
-  date: Date;
-  meetingType: MeetingType;
-  timeOfDay: TimeOfDay;
-  locationKey?: string;
-}) {
-  return this.prisma.appointment.findMany({
-    where: {
-      status: AppointmentStatus.CONFIRMED,
-      slot: {
-        session: {
-          doctorId: params.doctorId,
-          date: params.date,
-          meetingType: params.meetingType,
-          timeOfDay: params.timeOfDay,
-          locationKey: params.locationKey ?? 'NONE',
+    doctorId: number;
+    date: Date;
+    meetingType: MeetingType;
+    timeOfDay: TimeOfDay;
+    locationKey?: string;
+      }) {
+      return this.prisma.appointment.findMany({
+        where: {
+          status: AppointmentStatus.CONFIRMED,
+          slot: {
+            session: {
+              doctorId: params.doctorId,
+              date: params.date,
+              meetingType: params.meetingType,
+              timeOfDay: params.timeOfDay,
+              locationKey: params.locationKey ?? 'NONE',
         },
       },
     },
@@ -760,7 +768,7 @@ return {
 }
 
 
-  });
+  
 
 }
-}
+  

@@ -242,11 +242,6 @@ model DoctorScheduleRule {
   // for advanced wave patterns
 
   wavePattern      Json?  // Postgres jsonb (Prisma Json)
-  
-  
-
-  wavePattern Json? // Postgres jsonb (Prisma Json)
-
 
   @@unique([doctorId, meetingType, dayOfWeek, timeOfDay, startMinute, endMinute])
 }
@@ -367,9 +362,9 @@ model Appointment {
 
   doctorId  Int
   patientId Int
-  slotId    Int @unique // ✅ 1 appointment per slot
+  slotId    Int @unique
 
-  status AppointmentStatus 
+  status AppointmentStatus
 
   note         String?
   cancelReason String?
@@ -377,26 +372,25 @@ model Appointment {
   confirmedAt DateTime?
   cancelledAt DateTime?
 
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
   overrideDate        DateTime?
   overrideStartMinute Int?
   overrideEndMinute   Int?
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  overrideDate         DateTime?
-  overrideStartMinute  Int?
-  overrideEndMinute    Int?
-  slot Slot @relation(fields: [slotId], references: [id])
+  doctor  Doctor  @relation(fields: [doctorId], references: [id], onDelete: Cascade)
+  patient Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
 
-  doctor                           Doctor                            @relation(fields: [doctorId], references: [id], onDelete: Cascade)
-  patient                          Patient                           @relation(fields: [patientId], references: [id], onDelete: Cascade)
-  slot                             AvailabilitySlot                  @relation(fields: [slotId], references: [id], onDelete: Cascade)
+  slot AvailabilitySlot @relation(fields: [slotId], references: [id], onDelete: Cascade)
+
   appointmentRescheduleOfferGroups AppointmentRescheduleOfferGroup[]
   appointmentRescheduleOffers      AppointmentRescheduleOffer[]
 
   @@index([doctorId, status])
   @@index([patientId, status])
 }
+
 
 model AppointmentRescheduleOfferGroup {
   /// Public group id (UUID) — easy to reference in logs / URLs
